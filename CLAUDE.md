@@ -11,7 +11,7 @@
 4. `source infra/state.env`，拿到已创建的 AWS 资源 ID（该文件只有非敏感 ID）。
 5. 继续执行。每完成一个任务：勾选 tasks.md → 更新 progress.md（「当前状态」+ 在日志末尾追加一条）→ 提交 commit（改动和进度一起提交）。
 
-用户在新会话里说「继续」即可触发以上流程。
+用户在新会话里说「继续」即可触发以上流程（用户侧的操作指南见 `RESUME.md`）。
 
 ## 硬性规则
 
@@ -28,6 +28,7 @@
 
 | 路径 | 作用 |
 |---|---|
+| `RESUME.md` | 给用户看的「下次如何继续」操作指南（启动方式、第一句话怎么说、GATE / secret 注意事项）|
 | `specs/doris-mcp-quick/requirements.md` | 需求（R-xx）+ 已定决策 D1–D8 |
 | `specs/doris-mcp-quick/design.md` | 设计（由 `docs/改造方案.md` v0.1 演进而来，v0.1 原稿见 git 历史第一个提交）|
 | `specs/doris-mcp-quick/tasks.md` | 总任务清单（P0–P5），标注执行方与 GATE |
