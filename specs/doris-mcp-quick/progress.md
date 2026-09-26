@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P1 执行中（subagent-driven，分支 `p1-mcp-server`）；已完成 T1.1–T1.6
-- **进行中**：无（T1.6 已提交，等待任务 review）
-- **下一步**：T1.7 P-01：`GET /ping`、stderr 日志、`main()`（配置错误 exit 2）、`mcp_server.py` + HTTP 测试 + 本地启动冒烟
+- **阶段**：P1 执行中（subagent-driven，分支 `p1-mcp-server`）；已完成 T1.1–T1.7
+- **进行中**：无（T1.7 已提交，等待任务 review）
+- **下一步**：T1.8 本地 E2E：12 个工具、profile flow、3 种错误情况（`scripts/mcp_smoke.py flow`）
 - **阻塞**：无
 - **已创建的 AWS 资源**：无（`infra/state.env` 中只有部署前查到的已有资源 ID）
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
@@ -69,3 +69,10 @@
 - 新增：`mcp-server/config/mcp-server.toml`（P-06 运行配置：`query_timeout_seconds=50`、`query_max_rows=2000`、`pool_max_size=5`）、`mcp-server/src/agentcore_ext/__init__.py`、`settings.py`（`SettingsError`、`Settings` frozen dataclass、`load_settings()`：env / Secrets Manager 凭证，端口与 scope 校验，密码永不出现在异常消息里）、`app.py`（本任务仅 `build_server()`，串联 `create_server` 服务模式 + `register_profile_tools`）。
 - 验证：19 个新测试全绿；与 T1.1–T1.5 共 71 个 agentcore 测试全绿；upstream 离线测试 `🎉 All tests passed!`；`bash scripts/check-secrets.sh` → `check-secrets: OK (638 files scanned)`；6 个 whole-file 代码块与 brief 逐字节相等（Python 脚本比对确认）。
 - 提交：1 个 commit，新增 `config/`、`src/agentcore_ext/` 三个文件、两个测试文件 + 更新任务清单与进度日志。
+
+### 2026-09-26 T1.7 P-01：`/ping`、stderr 日志、`main()`、`mcp_server.py` + HTTP 测试 + 启动冒烟
+- TDD 顺序纠正：因误操作曾一次性写入全部 3 个文件（含完整版 `app.py`），发现后用只读的 `git show HEAD:...` 还原出 T1.6 提交的过渡版 `app.py`（未用 `git checkout --`/`reset`），补跑一次真正的红：`Ran 6 tests` / `FAILED (errors=6)`，全部 `AttributeError`（`MCP_PATH`、`configure_logging`），随后再覆盖为完整版。
+- 新增/覆盖：`test_agentcore_app.py`（新，6 个测试）、`app.py`（整体替换：`MCP_PATH`、`HTTP_MIDDLEWARE`（仅挂 `CharsetMiddleware`）、`build_server` 新增 `GET /ping`、`configure_logging()`、`main()`）、`mcp_server.py`（AgentCore Runtime entrypoint）；三个整文件块与 brief 逐字节相等（Python 脚本比对，`equal=True`）。
+- 验证：新测试 6 个全绿；累计 `discover -p 'test_agentcore_*.py'` 共 `Ran 77 tests` / `OK`；upstream 离线测试 `🎉 All tests passed!`；`bash scripts/check-secrets.sh` → `check-secrets: OK (640 files scanned)`。
+- 启动冒烟（不连 Doris）：(1) `DORIS_PORT=abc` → stderr 打印 `Invalid configuration: DORIS_PORT must be an integer, got 'abc'`，`exit=2`；(2) `MCP_PORT=18765` 正常启动，`/ping` 返回 `{"status":"Healthy","time_of_last_update":...}`，`mcp_smoke.py list --expect 12` → `tools: 12`，日志含 `Auth: service mode, MCP auth delegated to the edge; Doris user nobody` 与 `Doris MCP for AgentCore: Doris 127.0.0.1:1 (http 1) as nobody, profile scope all, workspace /tmp/p1-boot-ws`；日志中未出现密码；按端口 `ss -ltnp | grep ':18765 '` 找到 pid 后 `kill`，停止后端口确认已释放；`/tmp/p1-boot-ws`、`/tmp/p1-boot.log` 事后清理。
+- 提交：1 个 commit，新增 `mcp_server.py`、`test_agentcore_app.py`，整体替换 `app.py` + 更新任务清单与进度日志。
