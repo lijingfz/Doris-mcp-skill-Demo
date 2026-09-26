@@ -51,10 +51,10 @@
 
 | ✓ | ID | 标签 | 任务 | 需求 |
 |---|---|---|---|---|
-| [ ] | T3.1 | [AI+GATE] | Runtime 执行角色追加 `secretsmanager:GetSecretValue`（只限 `doris-mcp/mcp_svc`）| R-31, R-41 |
-| [ ] | T3.2 | [AI+GATE] | `agentcore.json`：codeLocation 改为 `../mcp-server/`，envVars 加 `DORIS_SECRET_ID`、`PROFILE_SCOPE`，重新部署 | R-30 |
+| [ ] | T3.1 | [AI+GATE] | Runtime 执行角色追加 `secretsmanager:GetSecretValue`（只限 `doris-mcp/mcp_svc`）；同时收紧 CDK 默认角色的通配权限（`foundation-model/*`、`xray`/`logs` 的 `*`），走 `agentcore.json` 的 `executionRoleArn` 或 `additionalPolicies`，不在 CDK 之外改角色，`scripts/render-agentcore.py` 同步（design §7、§14）| R-31, R-41 |
+| [ ] | T3.2 | [AI+GATE] | `agentcore.json`：codeLocation 改为 `../mcp-server/`，envVars 加 `DORIS_SECRET_ID`、`PROFILE_SCOPE`，重新部署；deploy 前确认 `~/.agentcore/config.json` 有 `"disableTransactionSearch": true`，否则 deploy 会改账号级 X-Ray 设置（design §13）| R-30 |
 | [ ] | T3.3 | [AI] | SigV4 直连冒烟（12 个工具 + flow）；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s | R-12, R-32 |
-| [ ] | T3.4 | [AI+GATE] | `synchronize-gateway-targets`；Gateway token 冒烟（`doris___*` 共 12 个）| R-10 |
+| [ ] | T3.4 | [AI+GATE] | `synchronize-gateway-targets`；Gateway token 冒烟（`doris___*` 共 12 个）；经 Gateway 每次调用都是冷启动，逐次记录耗时，至少含 `check_service_health` 和一个语义工具（`query_metric`）（design §13）| R-10 |
 | [ ] | T3.5 | [AI+GATE] | `mcp_svc` host 收紧为 `'172.31.%'`（D6），复测 | R-42 |
 
 ## P4 Quick 桌面版（计划：`plans/P4-quick.md`）
