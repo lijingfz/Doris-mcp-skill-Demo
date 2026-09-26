@@ -5,10 +5,10 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P0 进行中（native / executing-plans，分支 `p0-spike`）；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
-- **进行中**：T0.6 Gateway [GATE]：dry-run → 等待用户确认
-- **下一步**：T0.6 → T0.7 [USER] → T0.8。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
+- **进行中**：T0.7 Quick 桌面版接入 [USER]：准备材料、渲染 `quick/local-connector.json`，等用户在 Quick UI 操作
+- **下一步**：T0.7 [USER] → T0.8 → P0 整体评审。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
 - **阻塞**：无
-- **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
+- **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
 
 ## 日志
@@ -135,3 +135,11 @@
 - 验证：discovery `issuer` = `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_btuTL63V3`，token / authorize endpoint 在 `https://$COGNITO_DOMAIN/oauth2/…` 下，域名立即生效（没有等待）；`get-gw-token.sh --claims` → `client_id=$CLIENT_B_ID`、`scope=doris-mcp/invoke`、`token_use=access`，`iss` 与 issuer 一致。
 - 只读核对（不输出 ClientSecret）：pool `AllowAdminCreateUserOnly=true`、密码最少 16 位；client A = `code` 流程、scopes `openid doris-mcp/invoke`、回调为默认 URL、token revocation 开启；client B = `client_credentials`、scope `doris-mcp/invoke`；用户 `demo` = `CONFIRMED`/enabled；secret `doris-mcp/cognito-demo-user` 创建于 10:23:17。
 - 幂等：重跑 dry-run 只有 1 行 `update-user-pool-client … --client-name quick-user …`，没有 `create-*`。
+
+### 2026-09-26 T0.6 Gateway [GATE]
+- 10:25 UTC dry-run：4 条 `DRY-RUN: aws`（create-role、put-role-policy、create-gateway、create-gateway-target），与计划一致。信任策略限定 `aws:SourceAccount=890717383483` + `aws:SourceArn gateway/*`；权限策略只有 `InvokeAgentRuntime` → `dorismcp_dorismcp-ILgkSAFotU`（及其 `runtime-endpoint/*`）；authorizer `allowedClients=[A,B]`、`allowedScopes=["doris-mcp/invoke"]`；target 出站 `GATEWAY_IAM_ROLE`（service `bedrock-agentcore`）。只读核实：账号里原有的 Gateway 只有 `pragent-github-gw`（未触碰），`doris-mcp-gateway-role` 之前不存在。
+- **用户确认 → 10:33 UTC `APPLY=1 bash infra/30-gateway.sh`**，exit 0，38 s（含 15 s IAM 传播等待）；`get-gateway → READY`、`get-gateway-target → READY`。state.env 新增 4 行：`GW_ROLE_ARN`、`GW_ID=doris-mcp-gw-ryxzl0vgyv`、`GW_URL=https://doris-mcp-gw-ryxzl0vgyv.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp`、`GW_TARGET_ID=ENINDEEGGB`。创建 target 时 Gateway 调了 Runtime 两次（10:33:56、10:34:01 各一个新 log stream，用于同步工具目录）。
+- 不带 token（T0.7 排障用）：`HTTP/2 401`，`www-authenticate: Bearer error="invalid_token", scope="doris-mcp/invoke", resource_metadata="https://doris-mcp-gw-ryxzl0vgyv.gateway.bedrock-agentcore.us-east-1.amazonaws.com/.well-known/oauth-protected-resource"`。PRM 在**根路径** `/.well-known/oauth-protected-resource`（不是 `…/oauth-protected-resource/mcp`），原文：`{"authorization_servers": ["https://cognito-idp.us-east-1.amazonaws.com/us-east-1_btuTL63V3"], "resource": "https://doris-mcp-gw-ryxzl0vgyv.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp", "scopes_supported": ["doris-mcp/invoke"]}`。
+- 带 client B token（只放在环境变量里，未打印）：`list --expect 1` → `doris___net_check  [readOnly]`、`tools: 1`（没有 Gateway 内置工具，T3.4 / T4.1 的期望数量不用调整），connected+initialized 697 ms / total 1619 ms，Runtime 没有新 log stream（`tools/list` 由 Gateway 用已同步的目录回答）。`call doris___net_check` × 2：结果与 T0.4 相同（`mysql.ok=true banner=5.7.99`、`http.ok=true status=200`），connected+initialized 614 / 642 ms，total 7028 / 7022 ms。无效 token → `401 Unauthorized`，exit 1。
+- **会话复用（T0.8 要用）**：Gateway 对客户端**不返回** `Mcp-Session-Id`（Gateway 侧是 stateless）。用 `/tmp` 下的临时 bearer 探针在同一个客户端会话里连续发 3 次 `tools/call`：5522 / 4506 / 4549 ms，Runtime 出现 3 个新 log stream；`mcp_smoke.py` 的 2 次 call 也各对应 1 个新 stream。结论：**Gateway 每次 `tools/call` 都会新开一个 Runtime 会话（新 microVM，冷启动）**，即使在同一个客户端会话里也一样；所以经过 Gateway 时，每次工具调用约 4.5–5.5 s（spike，Gateway 与 Runtime 同在 us-east-1），在 Runtime 前做预热没有效果。P3 要用完整的 P1 server（依赖更多、import 更重）重新测冷启动，并与 Quick 60 s 上限一起评估。
+- 幂等：重跑 dry-run 只有 `put-role-policy` 和 `update-gateway`，没有 `create-*`。
