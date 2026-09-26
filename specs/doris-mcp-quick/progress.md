@@ -4,9 +4,10 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P0 进行中（native / executing-plans，分支 `p0-spike`）；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
-- **进行中**：T0.8 P0 结论（更新 design.md）
-- **下一步**：T0.8 → P0 整体评审（opus）→ 用户决定分支 `p0-spike` 如何合并。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）。Local stdio（R-11）在 Quick 里的验证顺延到 T4.2
+- **阶段**：P0 任务 T0.1–T0.8 全部完成（native / executing-plans，分支 `p0-spike`），待 P0 整体评审；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
+- **进行中**：P0 整体评审（opus）
+- **下一步**：P0 整体评审 → 用户决定分支 `p0-spike` 如何合并。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
+- **P3 / P4 路径决策（T0.8）**：P4 主路径 = Cloud Connector + **User auth**（client A，T0.7 已跑通）；备份 1 = Cloud Connector + Service auth（client B，T0.7 已跑通）；备份 2 = Local stdio（R-11，Quick 侧未验证，T4.2 是第一次）。T3.x 不用改（T3.3 已含「冷启动 + 典型查询 < 60 s」）；T4.2 注明是 Local stdio 在 Quick 里的首次验证；T5.5 的「预热脚本」改为「演示前冒烟脚本」（经 Gateway 预热无效）
 - **阻塞**：无
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
@@ -151,3 +152,10 @@
 - 回调 URL 的推断：client A 只注册了一个回调 `https://us-east-1.quicksight.aws.amazon.com/sn/oauthcallback`，Cognito 对不在 CallbackURLs 里的 `redirect_uri` 会直接报 `redirect_mismatch`，Part A 登录授权成功说明 Quick 用的就是这个默认值，`QUICK_CALLBACK` 不需要修改。
 - Runtime 日志核对（只读）：Quick 的两次调用对应 15:18:18、15:24:15 两个新 log stream。每个 stream 都是新 microVM 冷启动（`Starting MCP server` → uvicorn 启动 → `POST /mcp` 200 initialize、202 initialized、200 tools/call）。server 从进程启动到 tools/call 返回不到 1 s，冷启动的大部分时间花在 microVM 分配上（在 server 日志之前）。与 T0.6 结论一致：经过 Gateway 时每次 `tools/call` 都是一次新会话。
 - Part C 顺延：R-11 的验收在 P4（T4.2 切换 Local stdio 连接器、T4.4 两条路径各跑一次）。`mcp-proxy-for-aws` → Runtime 的 SigV4 链路已在 T0.4 从开发机验证；没验证的只是 Quick 桌面版这一侧（Local 连接器导入、Quick 所在电脑上的 `uv` 和 AWS profile）。P0 退出标准第 3 条中 Cloud Connector 部分已满足，Local stdio 部分记为未验证。
+
+### 2026-09-26 T0.8 P0 结论
+- design.md 升到 v0.3（变更记录一行，列 5 点）：§4.4 回调 URL ❓→✅（默认值）、User auth / Service auth 已跑通、Local stdio 顺延 T4.2；§4.5 写入 401 头、PRM（根路径）原文、Quick 按 PRM 请求到 scope、工具列表只有 target 工具、`tools/list` 由 Gateway 目录回答、Gateway 不返回 `Mcp-Session-Id` 且每次 `tools/call` 新开 Runtime 会话；§7 新增「agentcore CLI 0.30.0 实测」块（命令、生成文件、执行目录、栈名 / runtime 名、staging 路径、日志组、CDK 角色通配、transaction search 及关闭方式）；§11 P5 标准去掉「预热方案生效」；§13 用实测数字重写 60 s 一行，关闭 scope 一行，新增「deploy 修改 X-Ray」一行；§14 标注 Runtime 执行角色和 `--exception-level DEBUG` 待 P3 复查；取 secret 的命令改成单行并带 `--region` / `--output text` / `--no-cli-pager`（T0.7 经验）。
+- **冷启动结论**：冷启动 + 首次调用约 4.5–5.5 s（经 Gateway）≪ 40 s，不需要预热方案；经 Gateway 每次调用都是新会话，预热本来也无效，原计划里的「演示前预热 `check_service_health`」「调大 idle timeout」取消。P3 T3.3 用完整 server 重测。
+- **与 v0.19 的差异**：旧仓库不在本机，无法逐项对比；design §7 只记录 0.30.0 的实测事实，并注明 starter toolkit 的 `configure` / `launch` 已由 `agentcore create` / `deploy` 取代。
+- tasks.md：T0.8 勾选；T4.2、T5.5 措辞按上面的路径决策调整；T3.x 不变。
+- P0 退出标准：① Runtime → Doris 9030/8030 ✅（T0.4）；② 经 Gateway 列出并调用 `doris___net_check` ✅（T0.6）；③ Cloud Connector 两条路径 ✅，Local stdio 在 Quick 里未验证（顺延 T4.2）；④ 冷启动 / 热调用耗时、回调 URL、scope 行为都已记录 ✅（本条）。

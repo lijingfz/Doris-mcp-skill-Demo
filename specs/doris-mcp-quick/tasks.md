@@ -18,7 +18,7 @@
 | [x] | T0.5 | [AI+GATE] | `infra/20-cognito.sh`：user pool + 域名 + resource server + client A/B + 演示用户 | R-10, R-13 | P0 §T0.5 |
 | [x] | T0.6 | [AI+GATE] | `infra/30-gateway.sh`：Gateway 服务角色 + Gateway（CUSTOM_JWT）+ target `doris`（IAM 出站），token 冒烟 | R-10, R-41 | P0 §T0.6 |
 | [x] | T0.7 | [USER] | Quick 桌面版：Cloud Connector（User auth，再试 Service auth）+ Local stdio 连接器，各调用一次 `net_check`（Local stdio 未尝试，顺延到 T4.2）| R-10, R-11, R-13 | P0 §T0.7 |
-| [ ] | T0.8 | [AI] | 记录 P0 结论（回调 URL、scope 行为、冷启动耗时、CLI 差异），更新 design.md，编写 P1 前复核 | R-60 | P0 §T0.8 |
+| [x] | T0.8 | [AI] | 记录 P0 结论（回调 URL、scope 行为、冷启动耗时、CLI 差异），更新 design.md，编写 P1 前复核 | R-60 | P0 §T0.8 |
 
 ## P1 本地改造（计划：`plans/P1-mcp-server.md`）
 
@@ -62,7 +62,7 @@
 | ✓ | ID | 标签 | 任务 | 需求 |
 |---|---|---|---|---|
 | [ ] | T4.1 | [USER] | Cloud Connector Sync → 逐个启用 12 个工具，按 D7 设置权限 | R-10 |
-| [ ] | T4.2 | [USER] | Local stdio 连接器切换到最终 Runtime（`quick/local-connector.json`）| R-11 |
+| [ ] | T4.2 | [USER] | Local stdio 连接器切换到最终 Runtime（`quick/local-connector.json`）；P0 没有在 Quick 里验证过 Local stdio，这是第一次（前提：Quick 所在电脑有 `uv` 和 AWS profile `doris-demo`）| R-11 |
 | [ ] | T4.3 | [AI] | 编写「Doris 专家」agent 指令 `quick/agent-instructions.md`（≤ 5 万字符）| R-51 |
 | [ ] | T4.4 | [USER] | 桌面版创建 Agent，跑「开场 + 第 2 幕」（两条路径各一次）| R-10, R-11 |
 
@@ -74,5 +74,5 @@
 | [ ] | T5.2 | [AI] | 编写 `quick/skills/doris-mcp-adapter/SKILL.md`（翻译表、工具名前缀、profile 约定、60 s 限制）| R-50 |
 | [ ] | T5.3 | [USER] | 桌面版导入 skills，验证 adapter 能被自动选中 | R-50 |
 | [ ] | T5.4 | [USER] | 完整彩排 × 2（design §10），记录每步耗时和问题 | R-51 |
-| [ ] | T5.5 | [AI] | 根据彩排结果修正（skill / 指令 / 超时），准备预热脚本和演示手册 `quick/runbook.md` | R-51 |
+| [ ] | T5.5 | [AI] | 根据彩排结果修正（skill / 指令 / 超时），准备演示前冒烟脚本和演示手册 `quick/runbook.md`（经 Gateway 预热无效，见 design §13） | R-51 |
 | [ ] | T5.6 | [AI+GATE] | （演示结束后）`infra/99-cleanup.sh` | — |
