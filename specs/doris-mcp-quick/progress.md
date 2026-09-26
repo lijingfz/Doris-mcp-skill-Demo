@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P1 完成（subagent-driven，分支 `p1-mcp-server`，T1.1–T1.8 全部通过任务 review；整体评审 Ready to merge = Yes），等待用户决定是否 ff-merge 到 `main`
-- **进行中**：无
-- **下一步**：P0 spike（`plans/P0-spike.md`，native 执行）；之后 P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
+- **阶段**：P0 进行中（native / executing-plans，分支 `p0-spike`）；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
+- **进行中**：T0.2 网络（SG + VPC endpoints）[GATE]
+- **下一步**：T0.2 Step 1 dry-run → 展示给用户确认 → `APPLY=1`；之后 T0.3–T0.8。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
 - **阻塞**：无
 - **已创建的 AWS 资源**：无（`infra/state.env` 中只有部署前查到的已有资源 ID）
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
@@ -92,3 +92,12 @@
 - P3 时核对：CodeZip staging 的依赖 freeze 与 `.venv` 一致（`pyproject.toml` 只锁直接依赖）；20 个并发工具调用对 `pool_max_size=5` 和 Quick 60 s 上限的影响（FE HTTP 15 s 是分阶段超时，v2 + api_text 串行最坏 30 s 以上）；upstream 工具在连接池失败时不写审计（例如密码错误时的 `list_databases`），R-32 是否可以接受。
 - 更正 T1.5 日志：`test_agentcore_profile.py` 350 行、`profile.py` 377 行（git 计数）；T1.5 的红灯证据（`ModuleNotFoundError: No module named 'tools.profile'`）是在 review 修复轮里对 `be0ece6` 导出补做的。
 - 过程记录：T1.2、T1.5 的 commit 在推送前 amend 过（修正 Co-Authored-By trailer、补文件末尾换行），最终 SHA 以 `git log` 为准。
+
+### 2026-09-26 P1 合并
+- 用户选择「本地合并到 main」：`git merge --ff-only p1-mcp-server`（`aaebf3a..7a4b5a3`），合并后复跑 77 个 agentcore 测试 + upstream 离线测试均通过，删除分支 `p1-mcp-server`。未 push（没有配置远端）。
+
+### 2026-09-26 T0.1 工具准备
+- P0 按用户指示 native 执行（superpowers:executing-plans），在分支 `p0-spike` 上进行。
+- `npm i -g @aws/agentcore@0.30.0` → `agentcore --version` = `0.30.0`；Node `v22.23.2`、uv `0.11.24`、aws-cli `2.36.36`；调用者 `arn:aws:iam::890717383483:user/jingamz`。
+- `.venv` 已由 P1 T1.1 建好，**没有重建**（`uv venv .venv` 会覆盖 P1 的依赖），只执行 `uv pip install -r spike/p0-mcp/pyproject.toml`：68 个包均已满足，`fastmcp` = `3.4.4`。
+- lib.sh 自检（临时 state 文件）：`DRY-RUN: echo would-mutate`、`DRY-RUN: state_set SELFTEST=dry`、upsert 后 `grep -c` = 1、`runtime_url` 输出与计划一致；`infra/*.sh`、`scripts/*.sh` 语法检查无 `SYNTAX:` 行。
