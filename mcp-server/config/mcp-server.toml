@@ -1,0 +1,21 @@
+# AgentCore Runtime configuration (P-06). Doris host/ports and credentials come
+# from environment variables (src/agentcore_ext/settings.py) and override [server].
+[server]
+mcp_name = "doris-mcp"
+fe_host = "127.0.0.1"
+fe_port = 9030
+fe_http_port = 8030
+
+[logging]
+level = "info"
+audit_log = "./logs/audit.log"    # relative to the workspace dir ($TMPDIR/doris-mcp-workspace)
+rotation_when = "midnight"
+rotation_backup_count = 3
+
+[query]
+pool_min_size = 0
+pool_max_size = 5                 # one service account; Quick desktop runs <= 20 tools in parallel
+pool_idle_timeout_seconds = 300
+query_timeout_seconds = 50        # Quick fails any MCP call after 60 s (HTTP 424)
+query_max_rows = 2000             # keep results small enough for the agent's context
+db_whitelist = []

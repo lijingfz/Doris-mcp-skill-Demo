@@ -32,7 +32,7 @@
 | [x] | T1.3 | [AI] | P-03：store / bootstrap 服务账号兜底 | R-35 | P1 §T1.3 |
 | [x] | T1.4 | [AI] | P-04：`create_server(service_credentials=, workspace_dir=)` | R-33, R-35 | P1 §T1.4 |
 | [x] | T1.5 | [AI] | P-05：`src/tools/profile.py` + 单测（MockTransport）| R-22, R-23, R-24 | P1 §T1.5 |
-| [ ] | T1.6 | [AI] | P-06 `config/mcp-server.toml` + `agentcore_ext/settings.py` + `build_server`：注册 profile 工具，12 个工具 + Draft 7 校验测试 | R-12, R-20, R-31, R-33 | P1 §T1.6 |
+| [x] | T1.6 | [AI] | P-06 `config/mcp-server.toml` + `agentcore_ext/settings.py` + `build_server`：注册 profile 工具，12 个工具 + Draft 7 校验测试 | R-12, R-20, R-31, R-33 | P1 §T1.6 |
 | [ ] | T1.7 | [AI] | P-01：`GET /ping`、stderr 日志、`main()`（配置错误 exit 2）、`mcp_server.py` + HTTP 测试 + 本地启动冒烟 | R-30, R-32, R-34 | P1 §T1.7 |
 | [ ] | T1.8 | [AI] | 本地 E2E：12 个工具、profile flow、3 种错误情况（`scripts/mcp_smoke.py flow`）| R-22–R-25 | P1 §T1.8 |
 
