@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P1 完成（subagent-driven，分支 `p1-mcp-server`）；已完成 T1.1–T1.8
-- **进行中**：无（T1.8 已提交，等待任务 review）
-- **下一步**：P0 spike（`plans/P0-spike.md`，native 执行）；之后 P2 需要先编写 `plans/P2-doris.md`
+- **阶段**：P1 完成（subagent-driven，分支 `p1-mcp-server`，T1.1–T1.8 全部通过任务 review；整体评审 Ready to merge = Yes），等待用户决定是否 ff-merge 到 `main`
+- **进行中**：无
+- **下一步**：P0 spike（`plans/P0-spike.md`，native 执行）；之后 P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
 - **阻塞**：无
 - **已创建的 AWS 资源**：无（`infra/state.env` 中只有部署前查到的已有资源 ID）
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
@@ -85,3 +85,10 @@
 - 日志密码检查：`/tmp/p1-e2e.log`、`/tmp/p1-e2e-bad.log`、两个 workspace 的 `audit.log`/`server.log` 共 6 个文件，真实密码命中数全部为 `0`。审计日志：`wc -l /tmp/p1-e2e-ws/logs/audit.log` = 24 行、`grep -c doris_new_mcp.audit /tmp/p1-e2e.log` = 8 行；核对时间戳发现 24 行里有 16 行是同一 workspace 路径下更早（spec 阶段实测，见上面「P1 代码起草 + 实测」日志）留下未清理的历史记录，本次会话自己产生的 8 行与 stderr 里的 8 行 `doris_new_mcp.audit` 完全一一对应（同一 pid、同一时间窗），审计双写机制验证通过。
 - 按端口停止两个实例（8000/8001），确认 `stopped`；清理 `/tmp/p1-e2e-ws`、`/tmp/p1-e2e-ws-bad`、`/tmp/p1-boot-ws`；日志文件保留在 `/tmp` 供查阅（不进仓库）。
 - P1 至此全部完成（T1.1–T1.8）。
+
+### 2026-09-26 P1 整体评审
+- opus 整体评审 `aaebf3a..65e55f9`：Ready to merge = Yes；0 Critical / 0 Important / 9 Minor；77 个离线测试复跑通过；plan 中所有整文件代码块与提交逐字节一致；`git log -- mcp-server` 共 7 个 commit。
+- 建议 P3 之前补一个小的后续提交（代码不在已 review 的计划里，需用户确认）：① `get_query_profile` 返回的 profile 文本里 `Sql Statement:` 行没有经过 `mask_sensitive`（`list_recent_queries` 有）；② `settings.py` 读 secret 失败时 `from e` 改为 `from None`；③ `main()` 没有捕获 `build_server` 的异常（现在是退出码 1 + traceback，而不是退出码 2）；④ 缺少非默认 `DORIS_PORT`/`DORIS_HTTP_PORT` 传到 `cfg.cluster` 和 FE URL 的测试。
+- P3 时核对：CodeZip staging 的依赖 freeze 与 `.venv` 一致（`pyproject.toml` 只锁直接依赖）；20 个并发工具调用对 `pool_max_size=5` 和 Quick 60 s 上限的影响（FE HTTP 15 s 是分阶段超时，v2 + api_text 串行最坏 30 s 以上）；upstream 工具在连接池失败时不写审计（例如密码错误时的 `list_databases`），R-32 是否可以接受。
+- 更正 T1.5 日志：`test_agentcore_profile.py` 350 行、`profile.py` 377 行（git 计数）；T1.5 的红灯证据（`ModuleNotFoundError: No module named 'tools.profile'`）是在 review 修复轮里对 `be0ece6` 导出补做的。
+- 过程记录：T1.2、T1.5 的 commit 在推送前 amend 过（修正 Co-Authored-By trailer、补文件末尾换行），最终 SHA 以 `git log` 为准。

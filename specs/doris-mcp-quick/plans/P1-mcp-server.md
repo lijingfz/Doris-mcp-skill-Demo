@@ -2500,9 +2500,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ## P1 完成标准（对照 design §11）
 
-- [ ] `tools/list` 恰好 12 个，Draft 7 校验通过（T1.6、T1.7、T1.8 Step 3）
-- [ ] upstream 离线测试全部通过；`test_agentcore_*.py` 共 77 个测试全部通过
-- [ ] profile：hint 执行 → `list_recent_queries` 能找到 → summary < 20 000 字符（T1.8 Step 4）
-- [ ] 非法 qid → `INVALID_PARAMS`；找不到 → `profile_found=false`；密码错误 → `UNAUTHENTICATED` / `unavailable` / `CONNECTION_ERROR`（T1.8 Step 4–5）
-- [ ] 所有日志里真实密码命中数为 0（T1.8 Step 6）
-- [ ] `git log --oneline -- mcp-server` 能看到：vendoring、P-02、P-03、P-04、P-05、P-01/P-06、P-01 共 7 个 commit
+- [x] `tools/list` 恰好 12 个，Draft 7 校验通过（T1.6、T1.7、T1.8 Step 3）
+- [x] upstream 离线测试全部通过；`test_agentcore_*.py` 共 77 个测试全部通过
+- [x] profile：hint 执行 → `list_recent_queries` 能找到 → summary < 20 000 字符（T1.8 Step 4）
+- [x] 非法 qid → `INVALID_PARAMS`；找不到 → `profile_found=false`；密码错误 → `UNAUTHENTICATED` / `unavailable` / `CONNECTION_ERROR`（T1.8 Step 4–5）
+- [x] 所有日志里真实密码命中数为 0（T1.8 Step 6）
+- [x] `git log --oneline -- mcp-server` 能看到：vendoring、P-02、P-03、P-04、P-05、P-01/P-06、P-01 共 7 个 commit
