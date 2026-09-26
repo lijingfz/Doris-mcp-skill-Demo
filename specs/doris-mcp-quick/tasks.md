@@ -29,7 +29,7 @@
 |---|---|---|---|---|---|
 | [x] | T1.1 | [AI] | vendoring upstream @f235832 → `mcp-server/`，`pyproject.toml`（P-07），`.venv`，基线离线测试全部通过 | R-20 | P1 §T1.1 |
 | [x] | T1.2 | [AI] | P-02：`ClusterConfig.fe_http_port` | R-23 | P1 §T1.2 |
-| [ ] | T1.3 | [AI] | P-03：store / bootstrap 服务账号兜底 | R-35 | P1 §T1.3 |
+| [x] | T1.3 | [AI] | P-03：store / bootstrap 服务账号兜底 | R-35 | P1 §T1.3 |
 | [ ] | T1.4 | [AI] | P-04：`create_server(service_credentials=, workspace_dir=)` | R-33, R-35 | P1 §T1.4 |
 | [ ] | T1.5 | [AI] | P-05：`src/tools/profile.py` + 单测（MockTransport）| R-22, R-23, R-24 | P1 §T1.5 |
 | [ ] | T1.6 | [AI] | P-06 `config/mcp-server.toml` + `agentcore_ext/settings.py` + `build_server`：注册 profile 工具，12 个工具 + Draft 7 校验测试 | R-12, R-20, R-31, R-33 | P1 §T1.6 |

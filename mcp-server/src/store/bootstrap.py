@@ -412,13 +412,13 @@ def pre_validate_physical(
 
     # P2-4: Resolve connection config — prefer explicit params, then request
     # contextvar credentials (set by server.py before all store operations).
-    from store.store import _DORIS_HOST, _DORIS_PORT, _request_creds
+    from store.store import _DORIS_HOST, _DORIS_PORT, get_effective_credentials
     host = db_host or _DORIS_HOST
     port = db_port or _DORIS_PORT
     if db_user and db_password is not None:
         user, password = db_user, db_password
     else:
-        creds = _request_creds.get()
+        creds = get_effective_credentials()
         if creds is None:
             return False, "No Doris credentials available — request must carry a valid Bearer token"
         user, password = creds

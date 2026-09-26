@@ -82,6 +82,28 @@ def set_request_credentials(user: str, password: str) -> None:
     _request_creds.set((user, password))
 
 
+# Process-wide fallback credentials (AgentCore service mode). Request
+# credentials, when present, always win; with neither set, _get_conn() keeps
+# raising RuntimeError exactly as upstream does.
+_service_creds: tuple[str, str] | None = None
+
+
+def set_service_credentials(user: str, password: str) -> None:
+    """Install the service-account credentials used when a request carries none."""
+    global _service_creds
+    _service_creds = (user, password)
+
+
+def clear_service_credentials() -> None:
+    global _service_creds
+    _service_creds = None
+
+
+def get_effective_credentials() -> tuple[str, str] | None:
+    """Request credentials first, then service credentials, else None."""
+    return _request_creds.get() or _service_creds
+
+
 def set_doris_endpoint(host: str, port: int) -> None:
     """Update the Doris FE endpoint from server configuration."""
     global _DORIS_HOST, _DORIS_PORT
@@ -96,7 +118,7 @@ def set_doris_port(port: int) -> None:
 
 
 def _get_conn() -> pymysql.Connection:
-    creds = _request_creds.get()
+    creds = get_effective_credentials()
     if creds is None:
         raise RuntimeError(
             "No Doris credentials in request context. "
