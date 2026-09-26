@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeDorisMcpRuntimeOnly",
+      "Effect": "Allow",
+      "Action": "bedrock-agentcore:InvokeAgentRuntime",
+      "Resource": ["${RUNTIME_ARN}", "${RUNTIME_ARN}/runtime-endpoint/*"]
+    }
+  ]
+}
