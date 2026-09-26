@@ -5,10 +5,10 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P0 进行中（native / executing-plans，分支 `p0-spike`）；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
-- **进行中**：T0.2 网络（SG + VPC endpoints）[GATE]：dry-run 已完成（14 条 `aws` 命令），等待用户确认后 `APPLY=1`（T0.3 不依赖 T0.2，已先完成）
-- **下一步**：T0.2 Step 1 dry-run → 展示给用户确认 → `APPLY=1`；之后 T0.3–T0.8。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
+- **进行中**：T0.4 部署 spike Runtime [GATE]：先做 Step 1–3（`agentcore create`、render、validate、`deploy --dry-run`），Step 4 GATE 等待用户确认
+- **下一步**：T0.4 GATE → deploy → 记录 Runtime → SigV4 冒烟；之后 T0.5–T0.8。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
 - **阻塞**：无
-- **已创建的 AWS 资源**：无（`infra/state.env` 中只有部署前查到的已有资源 ID）
+- **已创建的 AWS 资源**：SG `doris-mcp-rt`（`RT_SG`）、`doris-mcp-vpce`（`VPCE_SG`）；`doris-demo-sg` 新增 9030/8030 ← `RT_SG` 两条入站；VPC endpoints S3（Gateway）、logs、secretsmanager（Interface，private DNS）—— ID 见 `infra/state.env`
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
 
 ## 日志
@@ -107,3 +107,10 @@
 - 单测：`(cd spike/p0-mcp && ../../.venv/bin/python -m unittest -v)` → `Ran 8 tests` / `OK`。
 - 本机对 Doris 公网 IP 实测（`MCP_PORT=8765`，进程环境里只有 `DORIS_HOST`）：`/ping` → `{"status":"Healthy"}`；`list --expect 1` → `net_check  [readOnly]`、`tools: 1`（connected+initialized 35 ms）；`call net_check` → `mysql.ok=true`、`banner="5.7.99"`（350 ms）、`http.ok=true`、`status=200`（385 ms），total 432 ms。停止后确认 8765 端口已释放。
 - 计划修正：计划里写的字段名 `server_version` 与 spike 代码、单测（`banner`，值就是 server version）不一致，以代码为准，把 `plans/P0-spike.md` 的 3 处改成 `banner`；spike 代码没有改动。
+
+### 2026-09-26 T0.2 网络（SG + VPC endpoints）[GATE]
+- 09:52 UTC dry-run：`grep -c '^DRY-RUN: aws'` = 14，与计划一致；以表格形式展示给用户。另外做了只读核实：目标 VPC 内只有 Doris EC2（`172.31.25.143`），没有已有 endpoint；本机在 ap-northeast-2 的另一个 VPC，不受 private DNS 影响。
+- **用户确认 → 09:56 UTC `APPLY=1 bash infra/10-network.sh`**（用户同时要求：全程使用 Opus 5.5，所有 subagent 都显式指定 opus）。
+- 新建：`RT_SG=sg-02e54e3ee60161793`（`doris-mcp-rt`）、`VPCE_SG=sg-0c405296a225090b5`（`doris-mcp-vpce`）、`VPCE_S3=vpce-000848162a3d0a1ab`、`VPCE_LOGS=vpce-0469d4fa5a0fb88ad`、`VPCE_SECRETSMANAGER=vpce-099dda5979ed39b9e`；3 个 endpoint 在 1 分钟内变为 `available`。
+- 自检：3 个 SG 都是 `no open inbound rule`；`doris-mcp-rt` 出站正好 4 条（9030/8030 → `sg-0a02e336df4299888`，443 → `pl-63a5400a`，443 → `VPCE_SG`）。
+- 验证：state.env 新增 5 行；重跑 dry-run 的 `DRY-RUN: aws` 行数 = 0（R-61）；`doris-demo-sg` 入站 = 原有 `13.125.9.110/32` 的 22/8030/9030 + 新增 `8030/9030 ← RT_SG`，没有其他规则；endpoints：S3 `available`/`False`（Gateway 类型没有 private DNS），logs、secretsmanager `available`/`True`。

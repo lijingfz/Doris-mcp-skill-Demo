@@ -12,7 +12,7 @@
 | ✓ | ID | 标签 | 任务 | 需求 | 计划 |
 |---|---|---|---|---|---|
 | [x] | T0.1 | [AI] | 工具准备（agentcore CLI、uv、aws CLI 版本检查）+ `infra/lib.sh`（代码已起草）| R-61 | P0 §T0.1 |
-| [ ] | T0.2 | [AI+GATE] | `infra/10-network.sh`：2 个 SG + Doris SG 引用规则 + S3/logs/secretsmanager endpoints | R-40, R-44 | P0 §T0.2 |
+| [x] | T0.2 | [AI+GATE] | `infra/10-network.sh`：2 个 SG + Doris SG 引用规则 + S3/logs/secretsmanager endpoints | R-40, R-44 | P0 §T0.2 |
 | [x] | T0.3 | [AI] | spike MCP `spike/p0-mcp/`（`net_check` 工具）+ `scripts/mcp_smoke.py`，本地测试（代码已起草）| R-30 | P0 §T0.3 |
 | [ ] | T0.4 | [AI+GATE] | `agentcore create` 生成 `dorismcp/`，部署 spike runtime（VPC 模式），`infra/25-runtime-state.sh` 记录 Runtime ARN/URL，SigV4 冒烟，测冷启动 | R-30, R-11 | P0 §T0.4 |
 | [ ] | T0.5 | [AI+GATE] | `infra/20-cognito.sh`：user pool + 域名 + resource server + client A/B + 演示用户 | R-10, R-13 | P0 §T0.5 |
