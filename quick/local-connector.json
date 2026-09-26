@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "doris-agentcore": {
+      "command": "uvx",
+      "args": [
+        "mcp-proxy-for-aws@latest",
+        "https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-east-1%3A890717383483%3Aruntime%2Fdorismcp_dorismcp-ILgkSAFotU/invocations?qualifier=DEFAULT",
+        "--service",
+        "bedrock-agentcore",
+        "--region",
+        "us-east-1",
+        "--timeout",
+        "55"
+      ],
+      "env": {
+        "AWS_PROFILE": "doris-demo"
+      }
+    }
+  }
+}

@@ -17,7 +17,7 @@
 | [x] | T0.4 | [AI+GATE] | `agentcore create` 生成 `dorismcp/`，部署 spike runtime（VPC 模式），`infra/25-runtime-state.sh` 记录 Runtime ARN/URL，SigV4 冒烟，测冷启动 | R-30, R-11 | P0 §T0.4 |
 | [x] | T0.5 | [AI+GATE] | `infra/20-cognito.sh`：user pool + 域名 + resource server + client A/B + 演示用户 | R-10, R-13 | P0 §T0.5 |
 | [x] | T0.6 | [AI+GATE] | `infra/30-gateway.sh`：Gateway 服务角色 + Gateway（CUSTOM_JWT）+ target `doris`（IAM 出站），token 冒烟 | R-10, R-41 | P0 §T0.6 |
-| [ ] | T0.7 | [USER] | Quick 桌面版：Cloud Connector（User auth，再试 Service auth）+ Local stdio 连接器，各调用一次 `net_check` | R-10, R-11, R-13 | P0 §T0.7 |
+| [x] | T0.7 | [USER] | Quick 桌面版：Cloud Connector（User auth，再试 Service auth）+ Local stdio 连接器，各调用一次 `net_check`（Local stdio 未尝试，顺延到 T4.2）| R-10, R-11, R-13 | P0 §T0.7 |
 | [ ] | T0.8 | [AI] | 记录 P0 结论（回调 URL、scope 行为、冷启动耗时、CLI 差异），更新 design.md，编写 P1 前复核 | R-60 | P0 §T0.8 |
 
 ## P1 本地改造（计划：`plans/P1-mcp-server.md`）

@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P0 进行中（native / executing-plans，分支 `p0-spike`）；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
-- **进行中**：T0.7 Quick 桌面版接入 [USER]：准备材料、渲染 `quick/local-connector.json`，等用户在 Quick UI 操作
-- **下一步**：T0.7 [USER] → T0.8 → P0 整体评审。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
+- **进行中**：T0.8 P0 结论（更新 design.md）
+- **下一步**：T0.8 → P0 整体评审（opus）→ 用户决定分支 `p0-spike` 如何合并。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）。Local stdio（R-11）在 Quick 里的验证顺延到 T4.2
 - **阻塞**：无
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
@@ -143,3 +143,11 @@
 - 带 client B token（只放在环境变量里，未打印）：`list --expect 1` → `doris___net_check  [readOnly]`、`tools: 1`（没有 Gateway 内置工具，T3.4 / T4.1 的期望数量不用调整），connected+initialized 697 ms / total 1619 ms，Runtime 没有新 log stream（`tools/list` 由 Gateway 用已同步的目录回答）。`call doris___net_check` × 2：结果与 T0.4 相同（`mysql.ok=true banner=5.7.99`、`http.ok=true status=200`），connected+initialized 614 / 642 ms，total 7028 / 7022 ms。无效 token → `401 Unauthorized`，exit 1。
 - **会话复用（T0.8 要用）**：Gateway 对客户端**不返回** `Mcp-Session-Id`（Gateway 侧是 stateless）。用 `/tmp` 下的临时 bearer 探针在同一个客户端会话里连续发 3 次 `tools/call`：5522 / 4506 / 4549 ms，Runtime 出现 3 个新 log stream；`mcp_smoke.py` 的 2 次 call 也各对应 1 个新 stream。结论：**Gateway 每次 `tools/call` 都会新开一个 Runtime 会话（新 microVM，冷启动）**，即使在同一个客户端会话里也一样；所以经过 Gateway 时，每次工具调用约 4.5–5.5 s（spike，Gateway 与 Runtime 同在 us-east-1），在 Runtime 前做预热没有效果。P3 要用完整的 P1 server（依赖更多、import 更重）重新测冷启动，并与 Quick 60 s 上限一起评估。
 - 幂等：重跑 dry-run 只有 `put-role-policy` 和 `update-gateway`，没有 `create-*`。
+
+### 2026-09-26 T0.7 Quick 桌面版接入 [USER]
+- Claude 准备材料：`python3 scripts/render-local-connector.py` → `quick/local-connector.json`（profile `doris-demo`）；非敏感参数和操作步骤写入 `quick/T0.7-guide.md`（用户所在窗口无法复制，按用户要求生成），`check-secrets` OK。
+- 用户取 secret 时遇到「没有输出」：Claude 核对了本机凭证来源——Claude Code 用的是环境变量凭证（`890717383483` / `jingamz`）；本机 `default` profile 是同一个账号（默认 region us-west-2，命令里都带了 `--region us-east-1`），`lijingfz` 是另一个账号 `057548996873`。给了用户带 `--output text --no-cli-pager` 的单行命令，之后用户顺利完成。
+- **用户回报**：Callback URL 一栏未填；**Part A User auth 成功**（用户报「登录后首次调用耗时约 66 ms」，这个数字与 net_check 返回的 `mysql.ms` / `http.ms` 同一量级，应是工具结果里的内部耗时，不是端到端耗时）；**Part B Service auth 成功**；**Part C Local stdio 没有尝试**；其他观察：无。
+- 回调 URL 的推断：client A 只注册了一个回调 `https://us-east-1.quicksight.aws.amazon.com/sn/oauthcallback`，Cognito 对不在 CallbackURLs 里的 `redirect_uri` 会直接报 `redirect_mismatch`，Part A 登录授权成功说明 Quick 用的就是这个默认值，`QUICK_CALLBACK` 不需要修改。
+- Runtime 日志核对（只读）：Quick 的两次调用对应 15:18:18、15:24:15 两个新 log stream。每个 stream 都是新 microVM 冷启动（`Starting MCP server` → uvicorn 启动 → `POST /mcp` 200 initialize、202 initialized、200 tools/call）。server 从进程启动到 tools/call 返回不到 1 s，冷启动的大部分时间花在 microVM 分配上（在 server 日志之前）。与 T0.6 结论一致：经过 Gateway 时每次 `tools/call` 都是一次新会话。
+- Part C 顺延：R-11 的验收在 P4（T4.2 切换 Local stdio 连接器、T4.4 两条路径各跑一次）。`mcp-proxy-for-aws` → Runtime 的 SigV4 链路已在 T0.4 从开发机验证；没验证的只是 Quick 桌面版这一侧（Local 连接器导入、Quick 所在电脑上的 `uv` 和 AWS profile）。P0 退出标准第 3 条中 Cloud Connector 部分已满足，Local stdio 部分记为未验证。
