@@ -58,6 +58,7 @@ class ClusterConfig:
     def __init__(self, server: dict, query: dict):
         self.fe_host: str = server.get("fe_host", "127.0.0.1")
         self.fe_mysql_port: int = server.get("fe_port", 9030)
+        self.fe_http_port: int = int(server.get("fe_http_port", 8030))
         self.pool_min_size: int = query.get("pool_min_size", 0)
         self.pool_max_size: int = query.get("pool_max_size", 10)
         self.pool_idle_timeout: int = query.get("pool_idle_timeout_seconds", 300)

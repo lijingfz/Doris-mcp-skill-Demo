@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P1 执行中（subagent-driven，分支 `p1-mcp-server`）；已完成 T1.1
-- **进行中**：无（T1.1 已提交，等待任务 review）
-- **下一步**：T1.2 P-02：`ClusterConfig.fe_http_port`
+- **阶段**：P1 执行中（subagent-driven，分支 `p1-mcp-server`）；已完成 T1.1–T1.2
+- **进行中**：无（T1.2 已提交，等待任务 review）
+- **下一步**：T1.3 P-03：store / bootstrap 服务账号兜底
 - **阻塞**：无
 - **已创建的 AWS 资源**：无（`infra/state.env` 中只有部署前查到的已有资源 ID）
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
@@ -36,3 +36,10 @@
 - upstream 离线测试全部通过：`bash mcp-server/test/run_all_tests.sh --offline` 收尾 `🎉 All tests passed!`。
 - aarch64（`manylinux_2_28`）模拟打包体积 106 MB（期望「约 107 MB」），符合 AgentCore CodeZip 250 MB 上限。
 - 本任务 commit 即 upstream 原始版本（`git log --oneline -- mcp-server | tail -1`）。
+
+### 2026-09-26 T1.2 P-02：`ClusterConfig.fe_http_port`
+- TDD：新建 `test_agentcore_config.py`，4 个测试初始红（`AttributeError`），实现后全绿。
+- 修改 `mcp-server/src/config/loader.py:61`，添加 `self.fe_http_port: int = int(server.get("fe_http_port", 8030))`。
+- upstream 离线测试仍全部通过：`🎉 All tests passed!`
+- T1.1 的 upstream 原始版本 commit 是 `e859681`（`git diff e859681 -- mcp-server/src` = 全部补丁）。
+- 提交：1 个 commit，仅修改 loader.py 1 行 + 新增测试文件。
