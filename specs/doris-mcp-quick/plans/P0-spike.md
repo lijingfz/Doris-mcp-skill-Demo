@@ -167,7 +167,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:** `spike/p0-mcp/{mcp_server.py,test_spike.py,pyproject.toml}`、`scripts/mcp_smoke.py`（均已在 spec 阶段写好，本任务只做验证；如果有失败，修复后再提交）
 
 **Interfaces:**
-- Produces：工具 `net_check() -> {"target": str, "mysql": {"port", "ok", "ms", "server_version"|"error"}, "http": {"port", "ok", "ms", "status"|"error"}}`；`GET /ping -> {"status": "Healthy"}`；监听 `0.0.0.0:$MCP_PORT/mcp`（默认 8000，stateless streamable HTTP）
+- Produces：工具 `net_check() -> {"target": str, "mysql": {"port", "ok", "ms", "banner"|"error"}, "http": {"port", "ok", "ms", "status"|"error"}}`；`GET /ping -> {"status": "Healthy"}`；监听 `0.0.0.0:$MCP_PORT/mcp`（默认 8000，stateless streamable HTTP）
 
 - [ ] **Step 1：单测**
 
@@ -187,7 +187,7 @@ curl -s http://127.0.0.1:8765/ping                                              
 .venv/bin/python scripts/mcp_smoke.py --url http://127.0.0.1:8765/mcp call net_check
 kill %1
 ```
-期望：`net_check  [readOnly]`、`tools: 1`；`mysql.ok=true`、`server_version="5.7.99"`；`http.ok=true`、`status=200`。
+期望：`net_check  [readOnly]`、`tools: 1`；`mysql.ok=true`、`banner="5.7.99"`；`http.ok=true`、`status=200`。
 
 - [ ] **Step 3：收尾**
 
@@ -268,7 +268,7 @@ PROXY="uvx mcp-proxy-for-aws@latest $RUNTIME_URL --service bedrock-agentcore --r
 .venv/bin/python scripts/mcp_smoke.py --stdio "$PROXY" call net_check     # 第 2 次 = 热
 .venv/bin/python scripts/mcp_smoke.py --stdio "$PROXY" list --expect 1
 ```
-期望：`target` 为 `172.31.25.143`，`mysql.ok=true`（`server_version=5.7.99`），`http.ok=true`（`status=200`）。把两次的 `connected+initialized` / `total` 毫秒数记入 progress。
+期望：`target` 为 `172.31.25.143`，`mysql.ok=true`（`banner=5.7.99`），`http.ok=true`（`status=200`）。把两次的 `connected+initialized` / `total` 毫秒数记入 progress。
 
 - [ ] **Step 8：看 CloudWatch 日志**
 

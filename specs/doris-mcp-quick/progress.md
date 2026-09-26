@@ -5,7 +5,7 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P0 进行中（native / executing-plans，分支 `p0-spike`）；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
-- **进行中**：T0.2 网络（SG + VPC endpoints）[GATE]
+- **进行中**：T0.2 网络（SG + VPC endpoints）[GATE]：dry-run 已完成（14 条 `aws` 命令），等待用户确认后 `APPLY=1`（T0.3 不依赖 T0.2，已先完成）
 - **下一步**：T0.2 Step 1 dry-run → 展示给用户确认 → `APPLY=1`；之后 T0.3–T0.8。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
 - **阻塞**：无
 - **已创建的 AWS 资源**：无（`infra/state.env` 中只有部署前查到的已有资源 ID）
@@ -101,3 +101,9 @@
 - `npm i -g @aws/agentcore@0.30.0` → `agentcore --version` = `0.30.0`；Node `v22.23.2`、uv `0.11.24`、aws-cli `2.36.36`；调用者 `arn:aws:iam::890717383483:user/jingamz`。
 - `.venv` 已由 P1 T1.1 建好，**没有重建**（`uv venv .venv` 会覆盖 P1 的依赖），只执行 `uv pip install -r spike/p0-mcp/pyproject.toml`：68 个包均已满足，`fastmcp` = `3.4.4`。
 - lib.sh 自检（临时 state 文件）：`DRY-RUN: echo would-mutate`、`DRY-RUN: state_set SELFTEST=dry`、upsert 后 `grep -c` = 1、`runtime_url` 输出与计划一致；`infra/*.sh`、`scripts/*.sh` 语法检查无 `SYNTAX:` 行。
+
+### 2026-09-26 T0.3 spike MCP 本地测试
+- T0.2 的 dry-run 已跑（`grep -c '^DRY-RUN: aws'` = 14，与计划一致），等待用户确认期间先做不依赖 AWS 的 T0.3。
+- 单测：`(cd spike/p0-mcp && ../../.venv/bin/python -m unittest -v)` → `Ran 8 tests` / `OK`。
+- 本机对 Doris 公网 IP 实测（`MCP_PORT=8765`，进程环境里只有 `DORIS_HOST`）：`/ping` → `{"status":"Healthy"}`；`list --expect 1` → `net_check  [readOnly]`、`tools: 1`（connected+initialized 35 ms）；`call net_check` → `mysql.ok=true`、`banner="5.7.99"`（350 ms）、`http.ok=true`、`status=200`（385 ms），total 432 ms。停止后确认 8765 端口已释放。
+- 计划修正：计划里写的字段名 `server_version` 与 spike 代码、单测（`banner`，值就是 server version）不一致，以代码为准，把 `plans/P0-spike.md` 的 3 处改成 `banner`；spike 代码没有改动。
