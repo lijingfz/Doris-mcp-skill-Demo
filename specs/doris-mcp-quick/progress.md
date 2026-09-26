@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P1 执行中（subagent-driven，分支 `p1-mcp-server`）；已完成 T1.1–T1.7
-- **进行中**：无（T1.7 已提交，等待任务 review）
-- **下一步**：T1.8 本地 E2E：12 个工具、profile flow、3 种错误情况（`scripts/mcp_smoke.py flow`）
+- **阶段**：P1 完成（subagent-driven，分支 `p1-mcp-server`）；已完成 T1.1–T1.8
+- **进行中**：无（T1.8 已提交，等待任务 review）
+- **下一步**：P0 spike（`plans/P0-spike.md`，native 执行）；之后 P2 需要先编写 `plans/P2-doris.md`
 - **阻塞**：无
 - **已创建的 AWS 资源**：无（`infra/state.env` 中只有部署前查到的已有资源 ID）
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
@@ -76,3 +76,12 @@
 - 验证：新测试 6 个全绿；累计 `discover -p 'test_agentcore_*.py'` 共 `Ran 77 tests` / `OK`；upstream 离线测试 `🎉 All tests passed!`；`bash scripts/check-secrets.sh` → `check-secrets: OK (640 files scanned)`。
 - 启动冒烟（不连 Doris）：(1) `DORIS_PORT=abc` → stderr 打印 `Invalid configuration: DORIS_PORT must be an integer, got 'abc'`，`exit=2`；(2) `MCP_PORT=18765` 正常启动，`/ping` 返回 `{"status":"Healthy","time_of_last_update":...}`，`mcp_smoke.py list --expect 12` → `tools: 12`，日志含 `Auth: service mode, MCP auth delegated to the edge; Doris user nobody` 与 `Doris MCP for AgentCore: Doris 127.0.0.1:1 (http 1) as nobody, profile scope all, workspace /tmp/p1-boot-ws`；日志中未出现密码；按端口 `ss -ltnp | grep ':18765 '` 找到 pid 后 `kill`，停止后端口确认已释放；`/tmp/p1-boot-ws`、`/tmp/p1-boot.log` 事后清理。
 - 提交：1 个 commit，新增 `mcp_server.py`、`test_agentcore_app.py`，整体替换 `app.py` + 更新任务清单与进度日志。
+
+### 2026-09-26 T1.8 本地 E2E（demo_ro → Doris 公网 IP，P1 收尾）
+- `scripts/mcp_smoke.py` 新增 `flow` 子命令（`--prefix --table --wait`）+ docstring 示例，`flow --help` 确认三个参数都在。
+- 端口 8000（`demo_ro`）：`list --expect 12` → `tools: 12`（12 个工具名与 R-20 一致，除 `reload_semantic_layer` 外全部 `[readOnly]`）；`check_service_health` → `"success": true` / `"doris": "connected"`（无 `doris_error`）；`list_databases` 含 `"ecom"` 计数 1。
+- `flow` 结果 **6/6 passed**，`exit=0`：`query_id=75d16842cba948b0-bf99811a6c1004e1`，`trace_comment_kept=True`；`get_query_profile` → `source=v2 total_chars=103476 returned_chars=9129`（<20000）；非法 id → `INVALID_PARAMS`；未知 id → `profile_found=false`；`DELETE …` → 被 MCP SQL 校验器拒绝，`code=INVALID_SQL`。
+- 端口 8001（`DORIS_PASSWORD=wrong-on-purpose`，每个工具只调用一次）：`list_recent_queries` → `success=false, code=UNAUTHENTICATED`（FE HTTP body `code:401`）；`check_service_health` → `success=true, doris="unavailable", doris_error="credentials rejected by Doris"`；`list_databases` → `success=false, code=CONNECTION_ERROR`，消息含 MySQL `1045 Access denied for user 'demo_ro@...'`（只有用户名，无密码）；两个进程调用期间均未退出、`/ping` 一直健康。
+- 日志密码检查：`/tmp/p1-e2e.log`、`/tmp/p1-e2e-bad.log`、两个 workspace 的 `audit.log`/`server.log` 共 6 个文件，真实密码命中数全部为 `0`。审计日志：`wc -l /tmp/p1-e2e-ws/logs/audit.log` = 24 行、`grep -c doris_new_mcp.audit /tmp/p1-e2e.log` = 8 行；核对时间戳发现 24 行里有 16 行是同一 workspace 路径下更早（spec 阶段实测，见上面「P1 代码起草 + 实测」日志）留下未清理的历史记录，本次会话自己产生的 8 行与 stderr 里的 8 行 `doris_new_mcp.audit` 完全一一对应（同一 pid、同一时间窗），审计双写机制验证通过。
+- 按端口停止两个实例（8000/8001），确认 `stopped`；清理 `/tmp/p1-e2e-ws`、`/tmp/p1-e2e-ws-bad`、`/tmp/p1-boot-ws`；日志文件保留在 `/tmp` 供查阅（不进仓库）。
+- P1 至此全部完成（T1.1–T1.8）。
