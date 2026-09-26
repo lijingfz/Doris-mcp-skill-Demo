@@ -290,8 +290,17 @@ def create_server(
     env_file: str | None = None,
     machine_ip: str | None = None,
     config: "AppConfig | None" = None,
+    service_credentials: tuple[str, str] | None = None,
+    workspace_dir: str | None = None,
 ) -> FastMCP:
-    """Create and configure the MCP server."""
+    """Create and configure the MCP server.
+
+    service_credentials: (user, password) of one Doris service account. When
+    set, MCP-level auth is disabled (the AgentCore Runtime / Gateway guard the
+    edge) and every tool and store operation uses that account.
+    workspace_dir: writable directory for workspaces and logs; defaults to
+    $DORIS_MCP_WORKSPACE_DIR, then <config_dir>/../workspace.
+    """
     if config_dir is None:
         config_dir = os.environ.get("DORIS_MCP_CONFIG_DIR", "config")
 
@@ -301,7 +310,11 @@ def create_server(
     cfg = config if config is not None else AppConfig(config_path, env_file=env_file)
     cc = cfg.cluster
     # Workspace directory
-    workspace_dir = os.path.join(os.path.dirname(config_path), "workspace")
+    workspace_dir = os.path.abspath(
+        workspace_dir
+        or os.environ.get("DORIS_MCP_WORKSPACE_DIR")
+        or os.path.join(os.path.dirname(config_path), "workspace")
+    )
     os.makedirs(workspace_dir, exist_ok=True)
 
     # ── Multi-workspace init ──
@@ -319,8 +332,12 @@ def create_server(
 
     # Multi-workspace watcher (lazy — discovered on first request)
     from store.watcher import MultiWorkspaceWatcher
-    from store.store import set_doris_endpoint
+    from store.store import clear_service_credentials, set_doris_endpoint, set_service_credentials
     set_doris_endpoint(cc.fe_host, cc.fe_mysql_port)
+    if service_credentials is not None:
+        set_service_credentials(*service_credentials)
+    else:
+        clear_service_credentials()
     multi_watcher = MultiWorkspaceWatcher(
         config_dir=_Path(config_path),
         workspace_root=_ws_root,
@@ -495,6 +512,8 @@ def create_server(
 
     auth_provider = CredentialVerifier(_credential_cache, _async_verify_credentials)
     logger.info("Auth: CredentialVerifier registered (username:password, 10-min cache)")
+    if service_credentials is not None:
+        logger.info("Auth: service mode, MCP auth delegated to the edge; Doris user %s", service_credentials[0])
 
     # Helper: get store for a workspace (defaults to "example")
     def _get_workspace_from_request(request: Request) -> str:
@@ -593,6 +612,9 @@ def create_server(
         """
         if pool_manager is None:
             raise RuntimeError("PoolManager not initialized")
+        if service_credentials is not None:
+            svc_user, svc_password = service_credentials
+            return await pool_manager.get_or_create_local_pool(svc_user, svc_password)
         from mcp.server.auth.middleware.auth_context import get_access_token
         access_token = get_access_token()
         if not access_token or not access_token.client_id:
@@ -794,7 +816,7 @@ def create_server(
     mcp = FastMCP(
         name=cfg.mcp.name,
         instructions=_SERVER_INSTRUCTIONS,
-        auth=auth_provider,
+        auth=None if service_credentials is not None else auth_provider,
         lifespan=_lifespan,
     )
 
