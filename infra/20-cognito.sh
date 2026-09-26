@@ -8,6 +8,7 @@
 # Secrets are never printed or passed as command-line arguments.
 # QUICK_CALLBACK overrides the OAuth redirect URL (use the one Quick shows in T0.7).
 # Dry-run by default. APPLY=1 to execute. Safe to re-run (also re-syncs client A settings).
+STATE_CALLER_WINS="QUICK_CALLBACK"
 source "$(dirname "$0")/lib.sh"
 
 POOL_NAME=doris-mcp-quick

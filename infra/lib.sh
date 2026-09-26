@@ -14,8 +14,14 @@ APPLY="${APPLY:-0}"
 PROJECT_TAG="doris-mcp-demo"
 export AWS_PAGER=""
 
+# Recorded state wins over the environment, except for the override knobs a script lists in
+# STATE_CALLER_WINS (set before sourcing this file), e.g. `QUICK_CALLBACK=… bash infra/20-cognito.sh`.
+declare -A _CALLER_WINS=()
+for _k in ${STATE_CALLER_WINS:-}; do [[ -n "${!_k+x}" ]] && _CALLER_WINS[$_k]="${!_k}"; done
 # shellcheck source=/dev/null
 source "$STATE_FILE"
+for _k in "${!_CALLER_WINS[@]}"; do printf -v "$_k" '%s' "${_CALLER_WINS[$_k]}"; done
+unset _k _CALLER_WINS
 export AWS_REGION="${AWS_REGION:-us-east-1}" AWS_DEFAULT_REGION="${AWS_REGION:-us-east-1}"
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }

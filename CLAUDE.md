@@ -48,5 +48,6 @@ bash infra/10-network.sh                  # dry-run：只打印将要执行的�
 APPLY=1 bash infra/10-network.sh          # 用户确认后才执行
 PYTHON_BIN=$PWD/.venv/bin/python bash mcp-server/test/run_all_tests.sh --offline
 .venv/bin/python -m unittest discover -s mcp-server/test -p 'test_agentcore_*.py' -v
+bash infra/test/test-lib.sh               # infra/lib.sh 离线测试（不调用 AWS）
 bash scripts/check-secrets.sh             # 提交前检查是否有明文密码
 ```
