@@ -5,10 +5,10 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P0 进行中（native / executing-plans，分支 `p0-spike`）；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
-- **进行中**：T0.5 Cognito [GATE]：dry-run → 等待用户确认
-- **下一步**：T0.5 → T0.6 Gateway [GATE] → T0.7 [USER] → T0.8。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
-- **阻塞**：无。**待用户决定**：`agentcore deploy` 自动把账号级 X-Ray indexing rule `Default` 改成了 100%（见 T0.4 日志），是否恢复 / 以后是否关闭 CLI 的 transaction search 步骤
-- **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；账号级 X-Ray indexing rule `Default` = 100%（CLI 自动修改）—— ID 见 `infra/state.env`
+- **进行中**：T0.6 Gateway [GATE]：dry-run → 等待用户确认
+- **下一步**：T0.6 → T0.7 [USER] → T0.8。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
+- **阻塞**：无
+- **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
 
 ## 日志
@@ -127,3 +127,11 @@
 - Step 8：日志组 `/aws/bedrock-agentcore/runtimes/dorismcp_dorismcp-ILgkSAFotU-DEFAULT`（与计划一致），能看到 `Uvicorn running on http://0.0.0.0:8000`、`POST /mcp` 200/202，以及平台每 2 s 一次的 `GET /ping`。账号里还有其他项目的日志组（`doris-mcp-server`、`doris_mcp_server-7w0KpkGDhR-DEFAULT`、`harness_pragent_*`），均未触碰。
 - CodeZip staging 实际在 `dorismcp/agentcore/.cache/dorismcp/staging`（63 MB，被生成的 `.cache/*` 忽略），不在 codeLocation 下；根 `.gitignore` 里的 `spike/p0-mcp/agentcore/` 一行目前用不到，保留无害。
 - Step 9：提交 `dorismcp/` 下 21 个文件（约 308 KB；`node_modules`、`cdk.out`、`.cache`、`.cli/logs`、`.env.local` 都被忽略，`.cli/deployed-state.json` 保留）。
+
+### 2026-09-26 T0.5 Cognito [GATE]
+- 10:20 UTC dry-run：6 条 `DRY-RUN: aws`（create-user-pool、create-user-pool-domain、create-resource-server、create-user-pool-client `quick-user` / `quick-service`、admin-create-user `demo`）+ 2 行日志（创建 demo 用户密码 secret、设置永久密码）。GATE 前核实脚本的 secret 处理：密码由 `get-random-password` 生成，经 0600 临时文件以 `file://` 传给 AWS CLI，不进 argv、不进输出。
+- **X-Ray 决定（用户，10:22 UTC）**：indexing rule `Default` 保持 100%（原值未知，不再改账号设置）；在本机 `~/.agentcore/config.json` 加 `"disableTransactionSearch": true`，以后（P3 重新部署）`agentcore deploy` 不再执行 transaction search 步骤。该文件是本机全局配置，不在仓库里。
+- **用户确认 → 10:23 UTC `APPLY=1 bash infra/20-cognito.sh`**，exit 0，约 20 s。state.env 新增 6 行：`COGNITO_POOL_ID=us-east-1_btuTL63V3`、`COGNITO_DOMAIN=doris-mcp-890717383483.auth.us-east-1.amazoncognito.com`、`DISCOVERY_URL`、`QUICK_CALLBACK`（默认值，T0.7 以 Quick UI 为准）、`CLIENT_A_ID=2q9be1ub7s5nh8ph4sl87uemr2`、`CLIENT_B_ID=4bf7hnvsugn9trphjtmsfldb4s`。
+- 验证：discovery `issuer` = `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_btuTL63V3`，token / authorize endpoint 在 `https://$COGNITO_DOMAIN/oauth2/…` 下，域名立即生效（没有等待）；`get-gw-token.sh --claims` → `client_id=$CLIENT_B_ID`、`scope=doris-mcp/invoke`、`token_use=access`，`iss` 与 issuer 一致。
+- 只读核对（不输出 ClientSecret）：pool `AllowAdminCreateUserOnly=true`、密码最少 16 位；client A = `code` 流程、scopes `openid doris-mcp/invoke`、回调为默认 URL、token revocation 开启；client B = `client_credentials`、scope `doris-mcp/invoke`；用户 `demo` = `CONFIRMED`/enabled；secret `doris-mcp/cognito-demo-user` 创建于 10:23:17。
+- 幂等：重跑 dry-run 只有 1 行 `update-user-pool-client … --client-name quick-user …`，没有 `create-*`。
