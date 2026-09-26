@@ -4,10 +4,10 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：spec 完成（requirements v1.1、design v0.2.2、tasks、plans P0 + P1），**P0 / P1 都未开始执行**
-- **进行中**：无
-- **下一步**：用户 review `plans/P0-spike.md` 和 `plans/P1-mcp-server.md` → 选择执行方式 → 从 T0.1 开始；P1 不依赖 P0，可以并行或先做（全部代码已嵌在 P1 计划里）
-- **阻塞**：等待用户 review
+- **阶段**：P1 执行中（subagent-driven，分支 `p1-mcp-server`）；已完成 T1.1
+- **进行中**：无（T1.1 已提交，等待任务 review）
+- **下一步**：T1.2 P-02：`ClusterConfig.fe_http_port`
+- **阻塞**：无
 - **已创建的 AWS 资源**：无（`infra/state.env` 中只有部署前查到的已有资源 ID）
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
 
@@ -29,3 +29,10 @@
 
 ### 2026-09-26 继续指南
 - 应用户要求新增根目录 `RESUME.md`：下次如何继续（启动方式、第一句话示例、GATE / secret 注意事项、查看进度的命令、常见情况）；在 `CLAUDE.md` 的关键路径表中加入链接。
+
+### 2026-09-26 T1.1 vendoring upstream + pyproject（P-07）
+- `git archive f235832`（tag `velodb-mcp-server-0.3.0`）vendored 594 个文件到 `mcp-server/`；新增 `UPSTREAM.md` 和 `pyproject.toml`（P-07），共 596 个新文件，无 upstream 文件被改动。
+- 新建仓库 `.venv`（Python 3.12.3），按 `pyproject.toml` 锁定版本安装：`fastmcp==3.4.4`、`starlette==1.3.1`、`httpx==0.28.1`（均与期望一致）。
+- upstream 离线测试全部通过：`bash mcp-server/test/run_all_tests.sh --offline` 收尾 `🎉 All tests passed!`。
+- aarch64（`manylinux_2_28`）模拟打包体积 106 MB（期望「约 107 MB」），符合 AgentCore CodeZip 250 MB 上限。
+- 本任务 commit 即 upstream 原始版本（`git log --oneline -- mcp-server | tail -1`）。
