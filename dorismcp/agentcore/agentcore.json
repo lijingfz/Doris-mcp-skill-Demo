@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "dorismcp",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "dorismcp"
+  },
+  "runtimes": [
+    {
+      "name": "dorismcp",
+      "build": "CodeZip",
+      "entrypoint": "mcp_server.py",
+      "codeLocation": "../spike/p0-mcp/",
+      "runtimeVersion": "PYTHON_3_12",
+      "envVars": [
+        {
+          "name": "DORIS_HOST",
+          "value": "172.31.25.143"
+        },
+        {
+          "name": "DORIS_PORT",
+          "value": "9030"
+        },
+        {
+          "name": "DORIS_HTTP_PORT",
+          "value": "8030"
+        }
+      ],
+      "networkMode": "VPC",
+      "networkConfig": {
+        "subnets": [
+          "subnet-0a06e314475c5d116",
+          "subnet-065f33a1a5f2ac3ff",
+          "subnet-01c473181df2246e4"
+        ],
+        "securityGroups": [
+          "sg-02e54e3ee60161793"
+        ]
+      },
+      "instrumentation": {
+        "enableOtel": false
+      },
+      "protocol": "MCP",
+      "authorizerType": "AWS_IAM"
+    }
+  ],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [],
+  "datasets": [],
+  "capacityProviders": [],
+  "payments": []
+}

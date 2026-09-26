@@ -1,0 +1,17 @@
+{
+  "targets": {
+    "default": {
+      "resources": {
+        "runtimes": {
+          "dorismcp": {
+            "runtimeId": "dorismcp_dorismcp-ILgkSAFotU",
+            "runtimeArn": "arn:aws:bedrock-agentcore:us-east-1:890717383483:runtime/dorismcp_dorismcp-ILgkSAFotU",
+            "roleArn": "arn:aws:iam::890717383483:role/AgentCore-dorismcp-defaul-ApplicationAgentDorismcpR-30Mcwi4tCmaV"
+          }
+        },
+        "stackName": "AgentCore-dorismcp-default",
+        "deployHash": "20729dbab50eb3f8"
+      }
+    }
+  }
+}

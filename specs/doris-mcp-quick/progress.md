@@ -5,10 +5,10 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P0 进行中（native / executing-plans，分支 `p0-spike`）；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
-- **进行中**：T0.4 部署 spike Runtime [GATE]：先做 Step 1–3（`agentcore create`、render、validate、`deploy --dry-run`），Step 4 GATE 等待用户确认
-- **下一步**：T0.4 GATE → deploy → 记录 Runtime → SigV4 冒烟；之后 T0.5–T0.8。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
-- **阻塞**：无
-- **已创建的 AWS 资源**：SG `doris-mcp-rt`（`RT_SG`）、`doris-mcp-vpce`（`VPCE_SG`）；`doris-demo-sg` 新增 9030/8030 ← `RT_SG` 两条入站；VPC endpoints S3（Gateway）、logs、secretsmanager（Interface，private DNS）—— ID 见 `infra/state.env`
+- **进行中**：T0.5 Cognito [GATE]：dry-run → 等待用户确认
+- **下一步**：T0.5 → T0.6 Gateway [GATE] → T0.7 [USER] → T0.8。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
+- **阻塞**：无。**待用户决定**：`agentcore deploy` 自动把账号级 X-Ray indexing rule `Default` 改成了 100%（见 T0.4 日志），是否恢复 / 以后是否关闭 CLI 的 transaction search 步骤
+- **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；账号级 X-Ray indexing rule `Default` = 100%（CLI 自动修改）—— ID 见 `infra/state.env`
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
 
 ## 日志
@@ -114,3 +114,16 @@
 - 新建：`RT_SG=sg-02e54e3ee60161793`（`doris-mcp-rt`）、`VPCE_SG=sg-0c405296a225090b5`（`doris-mcp-vpce`）、`VPCE_S3=vpce-000848162a3d0a1ab`、`VPCE_LOGS=vpce-0469d4fa5a0fb88ad`、`VPCE_SECRETSMANAGER=vpce-099dda5979ed39b9e`；3 个 endpoint 在 1 分钟内变为 `available`。
 - 自检：3 个 SG 都是 `no open inbound rule`；`doris-mcp-rt` 出站正好 4 条（9030/8030 → `sg-0a02e336df4299888`，443 → `pl-63a5400a`，443 → `VPCE_SG`）。
 - 验证：state.env 新增 5 行；重跑 dry-run 的 `DRY-RUN: aws` 行数 = 0（R-61）；`doris-demo-sg` 入站 = 原有 `13.125.9.110/32` 的 22/8030/9030 + 新增 `8030/9030 ← RT_SG`，没有其他规则；endpoints：S3 `available`/`False`（Gateway 类型没有 private DNS），logs、secretsmanager `available`/`True`。
+
+### 2026-09-26 T0.4 部署 spike Runtime（VPC 模式）[GATE]
+- Step 1：`agentcore create --project-name dorismcp --no-agent --skip-git --output-dir .` 一次成功（没有交互提问）。与计划相比多生成了 `dorismcp/AGENTS.md`、`dorismcp/README.md`、`agentcore/.llm-context/`、`agentcore/.env.local`（空文件，已被忽略）；`.gitignore` 与预期一致。`cdk/node_modules` 在 create 时就装好了（约 307 MB，已被忽略）。
+- Step 2：`render-agentcore.py --phase spike` 写入的 runtime 条目与计划一致（CodeZip / PYTHON_3_12 / MCP / AWS_IAM / VPC、3 个子网 + `RT_SG`、只有 3 个 envVars）。
+- Step 3：在 `dorismcp/` 目录下执行即可（不需要进 `dorismcp/agentcore`）：`agentcore validate` → `Valid`；`deploy --dry-run -v` → 栈 `AgentCore-dorismcp-default`，CodeZip 资产 17 MB（3 599 个文件）。合成模板里共 4 个资源：执行角色、默认策略、`AWS::BedrockAgentCore::Runtime`、CDKMetadata。
+- GATE 时向用户说明：CDK 默认执行角色带有通配权限（`bedrock:InvokeModel`/`CountTokens` → 全部 foundation model 和本账号的 inference profile；`logs:DescribeLogGroups`、`xray:Put*` → `*`；configuration-bundle 读写），与 R-41「按具体 ARN 授权」不符。P0 先接受，**P3 检查项**：收紧执行角色（去掉 InvokeModel），与 T3.1 一起处理。
+- **用户确认 → 10:07 UTC `agentcore deploy -y -v`**，10:13 完成（5 分 41 秒，exit 0）。`status --json` → `deployed` / `READY`。`25-runtime-state.sh`：`status=READY version=1`，写入 `RUNTIME_ARN/ID/ROLE_ARN/URL` 共 4 行（`RUNTIME_ID=dorismcp_dorismcp-ILgkSAFotU`）。
+- **计划外的账号级改动（事后发现，已报告用户）**：部署结束时 CLI 输出 `Transaction search enabled`。读 CLI 0.30.0 源码（`setupTransactionSearch`）确认：只要项目里有 Python runtime，每次 deploy 后 CLI 都会 ① 如果 X-Ray trace 目的地不是 CloudWatchLogs 就改过去（本账号已经是 `CloudWatchLogs`/`ACTIVE`，logs 资源策略 `TransactionSearchXRayAccess` 是 2026-04 建的，说明之前就开启了）；② 把 X-Ray indexing rule `Default` 设为 `transactionSearchIndexPercentage`（默认 100）。CloudTrail：`2026-09-26T10:13:24Z UpdateIndexingRule Default → desiredSamplingPercentage 100.0`，调用者 `jingamz`；90 天内没有更早的 UpdateIndexingRule 事件，原值无法从 CloudTrail 得知。可以用 `~/.agentcore/config.json` 的 `{"disableTransactionSearch": true}` 关掉这一步。spike 的 `enableOtel=false`，本身不产生 span；100% 影响的是账号里其他产生 span 的工作负载的索引费用。
+- Step 7 SigV4 冒烟（`mcp-proxy-for-aws` v1.7.0，uvx 缓存已预热）：`target=172.31.25.143`，`mysql.ok=true`（`banner=5.7.99`，60 ms），`http.ok=true`（`status=200`，66 ms）；`list --expect 1` → `net_check  [readOnly]`、`tools: 1`。耗时：第 1 次 connected+initialized 5434 ms / total 8146 ms；第 2 次 5694 / 8414 ms；list 6366 / 7681 ms。
+- **冷 / 热的实测拆分**（T0.8 要用）：CloudWatch 显示每个 `mcp_smoke.py` 进程都对应一个新的 log stream（新 microVM 会话），因为 proxy 每个进程都开一个新会话，所以计划里「第 2 次 = 热」不成立。加 `--header X-Amzn-Bedrock-AgentCore-Runtime-Session-Id=…` 也没有复用会话。用 `/tmp` 下的临时 botocore SigV4 探针直接发请求：新会话 `initialize` 4378 ms（冷启动，从 ap-northeast-2 的本机发起）；Runtime 会返回 `Mcp-Session-Id`（server 本身是 stateless）；带回同一个 `Mcp-Session-Id` 后 `tools/call` × 3 = 371 / 315 / 294 ms（热）。proxy 自身开销（对本地 spike，`--skip-auth`）约 0.9 s；经 proxy 的一次调用约 6 个 `POST /mcp`，每个约 0.65 s（跨区域 RTT + 签名）。结论：热不热取决于客户端是否复用 `Mcp-Session-Id`；Gateway 是否复用要在 T0.6 观察。
+- Step 8：日志组 `/aws/bedrock-agentcore/runtimes/dorismcp_dorismcp-ILgkSAFotU-DEFAULT`（与计划一致），能看到 `Uvicorn running on http://0.0.0.0:8000`、`POST /mcp` 200/202，以及平台每 2 s 一次的 `GET /ping`。账号里还有其他项目的日志组（`doris-mcp-server`、`doris_mcp_server-7w0KpkGDhR-DEFAULT`、`harness_pragent_*`），均未触碰。
+- CodeZip staging 实际在 `dorismcp/agentcore/.cache/dorismcp/staging`（63 MB，被生成的 `.cache/*` 忽略），不在 codeLocation 下；根 `.gitignore` 里的 `spike/p0-mcp/agentcore/` 一行目前用不到，保留无害。
+- Step 9：提交 `dorismcp/` 下 21 个文件（约 308 KB；`node_modules`、`cdk.out`、`.cache`、`.cli/logs`、`.env.local` 都被忽略，`.cli/deployed-state.json` 保留）。
