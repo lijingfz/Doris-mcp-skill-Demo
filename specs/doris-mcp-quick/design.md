@@ -1,6 +1,6 @@
 # Doris MCP on AgentCore × Amazon Quick 桌面版 —— 设计
 
-> 版本：**v0.3** · 2026-09-26 · 状态：P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）
+> 版本：**v0.3.1** · 2026-09-26 · 状态：P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
 > 输入材料：`prepare/` 下 4 份文件 + upstream `velodb-mcp-server`（锁定 commit `f235832`）+ 旧仓库 `velodb-mcp-agentcore`（复用流程与脚本）
 > 标注约定：✅ 已实测（本次对真实 Doris / AWS 账号只读验证）· 📄 官方文档确认 · ❓ 待 P0 验证
 
@@ -9,6 +9,7 @@
 | 版本 | 变更 |
 |---|---|
 | v0.1 | 初版（`docs/改造方案.md`），用户 review |
+| v0.3.1 | 用户决定 D9：User auth、Service auth 在 P0 都已跑通，**不做 Local stdio**（R-11 取消），备份路径改为 Cloud Connector + Service auth。§1、§2、§3、§4.4、§8.2、§8.3、§11、§13 同步；v0.3 行里「Local stdio 顺延到 T4.2」作废 |
 | v0.3 | P0 实测结论（`progress.md` T0.2–T0.7 日志）：① OAuth 回调 URL 就是默认值 `https://us-east-1.quicksight.aws.amazon.com/sn/oauthcallback` ✅；Quick 桌面版 User auth、Service auth 都已跑通，Local stdio 顺延到 T4.2（§4.4）。② Gateway 的 401 / PRM 实际内容；Quick 按 PRM 请求到了 `doris-mcp/invoke`；工具列表只有 target 工具（§4.5）。③ **经 Gateway 时每次 `tools/call` 都新开一个 Runtime 会话（冷启动约 4.5–5.5 s），预热无效**；直连时复用 `Mcp-Session-Id` 的热调用约 0.3 s（§4.5、§13）。④ agentcore CLI 0.30.0 的实际行为，包括 deploy 会顺带修改账号级 X-Ray Transaction Search 设置（§7、§13）。⑤ 待 P3 复查：CDK 默认执行角色带通配权限、Gateway `--exception-level DEBUG`（§14）|
 | v0.2.2 | P1 代码在 spec 阶段完成 TDD 草稿，并用 `demo_ro` 连真实 Doris 跑通 E2E（结论写进 `plans/P1-mcp-server.md`）：① `/api/profile/text` 找不到 id 时返回**纯文本** `query id <id> not found`，因此「非 JSON 就是命中」的判断改为「第一行必须是段落标题」（§4.1、§5.3）。② summary 额外删除全 0 计数器，并折叠 PhysicalPlan 的逐列统计：真实 profile 103 487 → **9 109** 字符（旧规则 20 487）（§4.1、§5.3、R-23）。③ Doris 会保留 `/* trace:… */` 注释，§5.3 的 ❓ 关闭。④ 入口**不挂** `RequestLoggerMiddleware`（它会把请求 header 和 body 里的 SQL 写进 CloudWatch）（§4.6、§5.2、§13）。⑤ P-07：vendoring 时要带上 upstream 根目录的 `requirements.txt`（upstream `test_deps.py` 需要它）；AgentCore CLI 0.30 先试 `aarch64-manylinux2014`，`rapidfuzz` 没有该平台 wheel，CLI 会自动回退到 `manylinux_2_28`，安装后约 107 MB |
 | v0.2.1 | spec 阶段追加核实：Gateway 从一开始就设 `allowedScopes=[doris-mcp/invoke]`（会写进 PRM 和 WWW-Authenticate，解决 Quick scope 风险）；`supportedVersions` 用默认值；`Mcp-Session-Id` 放行改为 P0 之后的可选实验；CDK 已在 us-east-1 bootstrap；VPC 内只有 Doris 一台 EC2；AWS CLI `file://` 不能读 `/dev/fd`、stdin，secret 输入改用 0600 临时文件；Quick 用的 client secret 由用户在**自己的终端**获取（不用 `!` 前缀，否则会进入对话记录）|
@@ -23,7 +24,7 @@
 3. **鉴权**：**单 Cognito 池（Quick → Gateway）+ Gateway → Runtime 用 IAM SigV4**。
 4. **Quick 桌面版集成**：
    - **主路径**：Cloud Connector（MCP + OAuth User auth）→ AgentCore Gateway。Enterprise 订阅满足前提（D2）。
-   - **备份路径**：桌面版 Local（stdio）连接器 → `mcp-proxy-for-aws`（本机 AWS 凭证 SigV4）→ 直连 Runtime。
+   - **备份路径**：Cloud Connector + **Service auth**（client credentials，client B）→ 同一个 Gateway（D9）。原计划的 Local stdio 连接器 → `mcp-proxy-for-aws` → 直连 Runtime 已取消。
 5. **Skills**：桌面版原生支持 `SKILL.md`。apache/doris-skills 用「From folder」导入，另加自写的 **`doris-mcp-adapter`** skill，把 skill 里的 `doriscli` 调用翻译成 MCP 工具调用。
 6. **Profile 工具重写**：对 Doris 4.1.4 实测，`prepare/profile.py` 有 6 处与真实 API 行为不符（§4.1），按 §5.3 重写。
 7. **推进方式**：spec 驱动，状态全部在仓库里（`CLAUDE.md` 中有恢复协议）；所有 AWS / Doris / SG 变更都要经过 GATE 确认。
@@ -46,7 +47,7 @@
 
 | 原方案 | 本方案 | 原因 |
 |---|---|---|
-| Quick **Web** Connectors | **Quick 桌面版**：Cloud Connector 主路径 + Local stdio 备份 | 新的硬性要求；桌面版已于 2026-09-09 GA（us-east-1 可用）📄 |
+| Quick **Web** Connectors | **Quick 桌面版**：Cloud Connector 主路径（User auth）+ Service auth 备份（Local stdio 已按 D9 取消）| 新的硬性要求；桌面版已于 2026-09-09 GA（us-east-1 可用）📄 |
 | 双 Cognito 池（Inbound #1 / Outbound #2） | **单池 + Gateway → Runtime IAM SigV4** | 📄 Gateway MCP target 文档写明 IAM 出站支持 AgentCore Runtime |
 | legacy `agentcore configure / launch` | 新 `@aws/agentcore` CLI（`agentcore.json`，由 CDK 托管） | starter toolkit 已弃用；旧仓库已用新 CLI 跑通 |
 | 自定义 Dockerfile | **CodeZip**（托管 Python 3.12） | 不需要 ECR，省 2 个 VPC endpoint；旧仓库验证过 |
@@ -65,7 +66,7 @@
 │  自定义 Agent「Doris 专家」 / Chat                                                      │
 │  Skills : doris-mcp-adapter(自写) + doris-debug / doris-profile-reader /               │
 │           doris-best-practices / doris-architecture-advisor   (SKILL.md 原生导入)       │
-│  Connectors : ① Cloud Connector (MCP, OAuth)        ② Local stdio (备份 / 开发)         │
+│  Connectors : ① Cloud Connector (MCP, OAuth)        ② Local stdio (已取消, D9)          │
 └───────────────┬──────────────────────────────────────────────┬─────────────────────────┘
                 │ ① HTTPS + Cognito JWT (Quick 自动续期)        │ ② stdio → mcp-proxy-for-aws
                 ▼   工具名：doris___<tool>                      │    (本机 AWS 凭证 SigV4) 工具名：<tool>
@@ -92,7 +93,7 @@
    Secrets Manager: doris-mcp/mcp_svc   ·   CloudWatch Logs: Runtime stdout/stderr + 审计
 ```
 
-**为什么 Runtime 用 AWS_IAM 而不是 JWT**：两条入口都能用 SigV4 到达 Runtime（Gateway 用服务角色，备份路径用本机凭证），所以 Cognito 只需要出现在「Quick → Gateway」这一段。
+**为什么 Runtime 用 AWS_IAM 而不是 JWT**：两条入口都能用 SigV4 到达 Runtime（Gateway 用服务角色，开发机冒烟用本机凭证），所以 Cognito 只需要出现在「Quick → Gateway」这一段。
 
 **Runtime ARN 保持不变**：P0 把最小 spike 部署为 runtime `dorismcp`，P3 只把 `codeLocation` 换成 `../mcp-server/` 后重新部署。这样 P0 建好的 Gateway target 和 IAM 策略可以直接沿用。
 
@@ -149,7 +150,7 @@
 - ✅ P0 实测（T0.7，2026-09-26，Quick 桌面版 + spike 工具 `net_check`）：
   - **Cloud Connector + User auth**：成功（client A，`demo` 用户登录）。
   - **Cloud Connector + Service auth**：成功（client B）。
-  - **Local stdio**：P0 未在 Quick 中尝试，顺延到 T4.2。`mcp-proxy-for-aws` → Runtime 的 SigV4 链路已在 T0.4 从开发机验证通过。
+  - **Local stdio**：P0 未在 Quick 中尝试；之后用户决定整个项目不做（D9），备份路径改为 Service auth。`mcp-proxy-for-aws` → Runtime 的 SigV4 链路已在 T0.4 从开发机验证通过，仅用于开发机冒烟。
   - Quick 发起的每次调用在 Runtime 日志里都是一个新会话（新 microVM）：`initialize` 200 → `notifications/initialized` 202 → `tools/call` 200。端到端耗时没有在 Quick 侧测量。
 
 ### 4.5 AgentCore Gateway 📄 / ✅
@@ -368,7 +369,8 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 4. 创建后**逐个启用工具**（新工具默认禁用）；只读工具设为 Always Allow，`execute_query` 在演示时也设为 Always Allow（D7）。
 5. 工具有变更时：`aws bedrock-agentcore-control synchronize-gateway-targets` → 在 Quick 连接器详情页点 **Sync**（会重新授权）→ 启用新工具。
 
-### 8.2 备份路径 ②：桌面版 Local stdio → Runtime（SigV4）
+### 8.2 备份路径 ②：桌面版 Local stdio → Runtime（SigV4）—— 已取消（D9）
+> v0.3.1：按 D9 不做这条路径，备份改为 Cloud Connector + Service auth（§4.4、§8.1）。下面的内容保留作参考（开发机上用 `mcp-proxy-for-aws` 冒烟仍然适用）。
 ```json
 {
   "mcpServers": {
@@ -388,7 +390,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 - **不推荐**：Remote + 静态 Bearer（Cognito access token 最长 1 天就会过期）。
 
 ### 8.3 「Doris 专家」Agent
-- 在桌面版创建自定义 Agent，关联 ① 或 ② 的连接器以及 §9 的 skills。
+- 在桌面版创建自定义 Agent，关联 ① 的连接器（User auth；备份时换成 Service auth 连接器）以及 §9 的 skills。
 - 指令只写三件事：角色（基于真实 ecom 集群的 Doris 专家）、硬约束（证据优先、只读、DDL 只给出不执行）、演示口径（中秋节 2026-09-25 12:00 的业务设定）。
 - skill 选择交给 Quick 按 description 自动匹配。
 
@@ -441,11 +443,11 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 
 | 阶段 | 内容 | 验收标准 |
 |---|---|---|
-| **P0 技术验证** | VPC endpoints + SG；最小 MCP（`net_check`）部署到 Runtime VPC 模式；Cognito；Gateway（IAM 出站）；Quick 桌面版 ① 和 ② 各连一次 | ① Runtime 内能 TCP 连通 172.31.25.143:9030/8030；② 经 Gateway 能列出并调用 `doris___net_check`；③ 桌面版两条路径都能调用该工具；④ 记录冷启动耗时、OAuth 回调 URL 和 scope 行为 |
+| **P0 技术验证** | VPC endpoints + SG；最小 MCP（`net_check`）部署到 Runtime VPC 模式；Cognito；Gateway（IAM 出站）；Quick 桌面版 ① 和 ② 各连一次（② 按 D9 取消，改为 Service auth 连一次 ✅）| ① Runtime 内能 TCP 连通 172.31.25.143:9030/8030；② 经 Gateway 能列出并调用 `doris___net_check`；③ 桌面版两条路径都能调用该工具（按 D9 为 User auth 与 Service auth，均 ✅）；④ 记录冷启动耗时、OAuth 回调 URL 和 scope 行为 |
 | **P1 本地改造** | §5 全部补丁；本机用 `demo_ro` 连 Doris 公网 IP 联调 | 12 个工具都能调；Draft 7 校验通过；upstream 离线测试全部通过；profile：用 hint 执行 → 能列出 → 能取到 summary（< 20k 字符）；非法 qid、找不到、密码错误三种情况都返回结构化结果 |
 | **P2 Doris 与语义层** | §6：secret、账号、授权、ecom 语义模型发布 | `mcp_svc` 权限矩阵通过；`query_metric` 的 GMV 与故事线 SQL 结果一致 |
 | **P3 AgentCore 部署** | Runtime 切换为 `mcp-server/`，接入 secret | SigV4 直连冒烟通过；Gateway token 冒烟通过；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s；`mcp_svc` host 收紧 |
-| **P4 Quick 桌面版** | §8：① 主路径 + ② 备份路径 + Agent | 两条路径都能完成 §10 的「开场 + 第 2 幕」；工具权限按 D7 设置 |
+| **P4 Quick 桌面版** | §8：① 主路径（User auth）+ 备份路径（Service auth，D9）+ Agent | 两条路径都能完成 §10 的「开场 + 第 2 幕」；工具权限按 D7 设置 |
 | **P5 Skills 与彩排** | §9 导入与 adapter；§10 完整彩排 2 次 | Track A、Track B 端到端无人工干预（执行 DDL 除外）；记录每步耗时（经 Gateway 时每次工具调用都含冷启动，预热无效，见 §13）|
 
 ---
@@ -465,7 +467,7 @@ D1–D8 已于 2026-09-26 确定，完整结论见 `requirements.md` 文末。�
 | Quick 的 scope 行为 | PRM 没声明 scope 时，Quick 会用默认 scope，可能导致鉴权失败 | Gateway 设 `allowedScopes=[doris-mcp/invoke]`，它会写进 PRM，Quick 按 PRM 请求 scope ✅；**P0 已实测关闭**：User auth、Service auth 都在 scope 限制下成功（§4.5）。回退手段保留：先用 `GW_ALLOWED_SCOPES=` 去掉 scope 限制，再不行改用 Service auth |
 | Gateway 与 Quick 两层工具缓存 | 改了工具但 Quick 看不到 | 固定流程：deploy → synchronize-gateway-targets → Quick Sync → 启用新工具 |
 | 工具名前缀 `doris___` | skill 里写的工具名对不上 | adapter skill 明确说明两种写法 |
-| `mcp-proxy-for-aws` 与 Runtime URL 不兼容 | 备份路径不可用 | P0 验证；不通时沿用旧仓库的 token proxy 方案（127.0.0.1:3333 → Gateway）|
+| `mcp-proxy-for-aws` 与 Runtime URL 不兼容 | ~~备份路径不可用~~ 只影响开发机冒烟（D9 后不再是演示路径）| ✅ T0.4 已验证兼容；已关闭 |
 | agentcore CLI v0.30 与旧仓库验证的 v0.19 有差异 | 部署命令或 schema 不同 | T0.4 先 `agentcore validate`；以 CLI 实际生成的文件为准。✅ P0 已用 0.30.0 跑通 create / validate / deploy / status，实际行为见 §7 |
 | `agentcore deploy` 修改账号级 X-Ray 设置 | Transaction Search indexing rule 被设为 100%，影响账号里其他产生 span 的工作负载的索引费用 | 用户决定 rule 保持 100%；部署机上设置 `~/.agentcore/config.json` `"disableTransactionSearch": true`（开发机已设）；deploy 类 GATE 要说明这一点（§7）|
 | v1 profile API 跨用户可见 | 能看到其他用户的 SQL 文本 | D4 开关（self 模式同时关闭跨用户回退）；这是 Doris 自身的行为，写进风险说明 |

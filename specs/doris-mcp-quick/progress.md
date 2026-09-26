@@ -4,10 +4,10 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P0 任务 T0.1–T0.8 全部完成（native / executing-plans，分支 `p0-spike`），待 P0 整体评审；P1 已 ff-merge 到 `main`（`7a4b5a3`），分支 `p1-mcp-server` 已删除
-- **进行中**：P0 整体评审（opus）
-- **下一步**：P0 整体评审 → 用户决定分支 `p0-spike` 如何合并。P2 需要先编写 `plans/P2-doris.md`；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）
-- **P3 / P4 路径决策（T0.8）**：P4 主路径 = Cloud Connector + **User auth**（client A，T0.7 已跑通）；备份 1 = Cloud Connector + Service auth（client B，T0.7 已跑通）；备份 2 = Local stdio（R-11，Quick 侧未验证，T4.2 是第一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时（P0 整体评审 I-2 补上）；T4.2 注明是 Local stdio 在 Quick 里的首次验证；T5.5 的「预热脚本」改为「演示前冒烟脚本」（经 Gateway 预热无效）
+- **阶段**：P0 完成（T0.1–T0.8 + 整体评审，修复已提交），分支 `p0-spike` 本地合并到 `main`（用户选择，不 push）；P1 早先已合并（`7a4b5a3`）
+- **进行中**：无
+- **下一步**：编写 `plans/P2-doris.md`（P2 Doris 与语义层）；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）；P0 整体评审的 9 项 Minor 记录在日志「P0 整体评审」，由用户决定是否处理
+- **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
@@ -166,3 +166,9 @@
 - **I-3 已修**：`infra/lib.sh` 读取 state.env 时会覆盖调用方的环境变量，T0.5 之后 state.env 里有了 `QUICK_CALLBACK`，所以文档里的 `QUICK_CALLBACK=… bash infra/20-cognito.sh` 会被静默忽略（main 上已有的问题，P0 没触发）。改为：脚本在 source 之前用 `STATE_CALLER_WINS` 列出允许调用方覆盖的变量，只有这些变量以调用方为准，其余仍以 state.env 为准（例如调用方的 `AWS_REGION` 不会生效）。新增离线测试 `infra/test/test-lib.sh`（5 项，修复前 2 项失败，修复后全部通过）；dry-run 验证：带 `QUICK_CALLBACK='https://example.invalid/cb'` 时 `update-user-pool-client --callback-urls` 显示覆盖值，不带时是默认值。
 - **I-1 待用户决定**：P0 退出标准第 3 条的 Local stdio 部分没有在 Quick 里验证，顺延到 T4.2 是 Claude 自己的判断，需要用户确认，或者在合并前补做 Part C。
 - Minor（记录，暂不修）：M-1 scope 结论表述过强（Cognito 在请求不带 scope 时会授予 client 的全部 scope，登录成功不能证明 Quick 按 PRM 请求了 scope）；M-2 `quick/T0.7-guide.md` 里取 secret 的命令还是旧的多行写法；M-3 Quick 侧端到端耗时没有测过；M-4 会话 / 冷启动探针只在 `/tmp`，P3 无法复现；M-5 `mcp-proxy-for-aws@latest` 未固定版本（只验证过 1.7.0）；M-6 「预热无效」只对 Gateway 路径成立，Local stdio 路径会复用会话，预热和 idle timeout 可能有用；M-7 `render-local-connector.py` 里把 `RUNTIME_URL` 的来源写成了 `30-gateway.sh`（应为 `25-runtime-state.sh`）；M-8 根 `.gitignore` 注释里的 staging 路径不对；M-9 `6a7bca0` 的提交标题写了 local stdio。评审建议 P3 考虑调低 `idleRuntimeSessionTimeout`（经 Gateway 每次调用都会留下一个最长 15 min 的 microVM 及其连接池），并核对 `mcp_svc` 的连接数上限。
+
+### 2026-09-26 D9：不做 Local stdio（用户决定）
+- 评审 I-1 指出：P0 退出标准第 3 条的 Local stdio 部分没有验证，顺延是 Claude 自己的判断。询问用户后，用户回复「既然 A 和 B 已经跑通，其实 C 就不用做了」，并确认范围是**整个项目都不做**。
+- 同步修改：requirements v1.2（R-11 取消、R-13 成为备份路径并加 P4 验收、新增 D9）；design v0.3.1（§1、§2、§3 图、§4.4、§8.2 标为已取消但保留作参考、§8.3、§11 P0 / P4、§13 `mcp-proxy-for-aws` 一行关闭）；tasks（T0.7 备注、删除 T4.2、T4.4 改为 User auth / Service auth 各一次，需求列 R-11 → R-13）。
+- P0 退出标准第 3 条按 D9 视为满足（User auth、Service auth 两条路径都已调用成功）。评审 M-6（Local stdio 路径的预热）随之不再适用。`quick/local-connector.json`、`scripts/render-local-connector.py` 保留作参考。
+- 用户选择：分支 `p0-spike` 本地合并到 `main`，不 push。

@@ -1,6 +1,7 @@
 # 需求：Doris MCP on AgentCore × Amazon Quick 桌面版
 
-> 版本 v1.1 · 2026-09-26 · 来源：`prepare/` 下 4 份材料 + 用户确认的决策（见文末）
+> 版本 v1.2 · 2026-09-26 · 来源：`prepare/` 下 4 份材料 + 用户确认的决策（见文末）
+> v1.2：R-11（Local stdio 备份路径）按 D9 取消，备份路径改为 Service auth（R-13），R-13 的验收同步加严
 > v1.1：R-23 的 summary 裁剪规则按真实 profile 实测加严（另外删除全 0 计数器、折叠逐列统计；见 design v0.2.2），并补充 api_text 的命中条件
 > 句式采用 EARS：WHEN〈触发〉THE SYSTEM SHALL〈行为〉；「验收」一栏写可检验的标准。
 
@@ -9,9 +10,9 @@
 | ID | 需求 | 验收 |
 |---|---|---|
 | R-10 | WHEN 用户在 Quick 桌面版里通过 **Cloud Connector（MCP，User auth：OAuth 授权码 + PKCE）** 提问，THE SYSTEM SHALL 经 AgentCore Gateway → Runtime 调用 Doris MCP 工具并返回结果。 | 桌面版能列出工具（名称形如 `doris___<tool>`），能调通 `check_service_health`，能完成 design §10 中「开场 + 第 2 幕」 |
-| R-11 | THE SYSTEM SHALL 提供不依赖 Cognito/Gateway 的备份路径：桌面版 **Local stdio** 连接器 → `mcp-proxy-for-aws`（SigV4）→ Runtime。 | 用 `quick/local-connector.json` 导入后，同样的两个演示段落能跑通 |
+| R-11 | ~~THE SYSTEM SHALL 提供不依赖 Cognito/Gateway 的备份路径：桌面版 **Local stdio** 连接器 → `mcp-proxy-for-aws`（SigV4）→ Runtime。~~ **已取消（D9）**：User auth、Service auth 在 P0 都已跑通，备份路径改为 Service auth（R-13）。 | —（`quick/local-connector.json` 保留作参考，不验收）|
 | R-12 | THE SYSTEM SHALL 让工具定义满足 Quick 的限制：inputSchema 符合 JSON Schema Draft 7；每个连接器 ≤ 100 个工具；典型操作在 60 s 内完成。 | 离线测试用 Draft7Validator 检查 12 个工具；P3 实测冷启动 + 典型查询 < 60 s |
-| R-13 | WHERE 需要机器身份（不需要用户登录）时，THE SYSTEM SHALL 支持 Cloud Connector 的 **Service auth**（client credentials）。 | P0 中 Service auth 至少连通一次 |
+| R-13 | WHERE 需要机器身份（不需要用户登录）时，THE SYSTEM SHALL 支持 Cloud Connector 的 **Service auth**（client credentials）；它也是 User auth 的备份路径（D9）。 | P0 中 Service auth 至少连通一次（✅ T0.7）；P4 用 Service auth 连接器跑通 design §10 的「开场 + 第 2 幕」 |
 
 ## 2. 工具
 
@@ -74,3 +75,4 @@
 | D6 | `mcp_svc` 的 host | 先用 `'%'`（由 SG 控制网络边界），P3 之后收紧为 `'172.31.%'` |
 | D7 | `execute_query` 权限 | 彩排和演示时设为 **Always Allow**，平时用 Ask Each Time |
 | D8 | 代码仓 | 本地 `git init`，是否推送由用户决定 |
+| D9 | 备份路径（P0 之后，2026-09-26）| User auth、Service auth 在 P0 都已跑通，**不做 Local stdio**（取消 R-11），备份路径改为 Cloud Connector + **Service auth**（client B）|
