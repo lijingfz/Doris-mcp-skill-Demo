@@ -75,5 +75,5 @@
 | D5 | profile 采集方式 | **只用 `SET_VAR` hint**，不修改 Doris 全局配置 |
 | D6 | `mcp_svc` 的 host | 先用 `'%'`（由 SG 控制网络边界），P3 之后收紧为 `'172.31.%'` |
 | D7 | `execute_query` 权限 | 彩排和演示时设为 **Always Allow**，平时用 Ask Each Time |
-| D8 | 代码仓 | 本地 `git init`，是否推送由用户决定 |
+| D8 | 代码仓 | 本地 `git init`，是否推送由用户决定（2026-09-27 用户决定推送到**私有**仓库 `lijingfz/Doris-mcp-skill-Demo`，remote `origin`；以后每次 push 仍需用户确认）|
 | D9 | 备份路径（P0 之后，2026-09-26）| User auth、Service auth 在 P0 都已跑通，**不做 Local stdio**（取消 R-11），备份路径改为 Cloud Connector + **Service auth**（client B）|

@@ -289,3 +289,7 @@
 - 用户选择「本地合并回 main」→ `git merge --ff-only p2-doris`（main 从 `3c55f23` 快进到 `7e957b8`，13 个提交），删除分支 `p2-doris`；没有 push（D8）。
 - 合并后在 `main` 上跑全部离线测试：`doris/test` `Ran 119 tests` / `OK`；5 组 shell 测试均 `all passed`；`test_agentcore_*.py` `Ran 82 tests` / `OK`；upstream 离线测试 `🎉 All tests passed!`。
 - push 前需要用户知悉（D8）：`prepare/Doris电商演示-部署与故事线.md` 含 Doris 主机地址（b5114b2 引入，`prepare/` 不能改）；所有提交的作者 / 提交者邮箱含开发机内网 IP；FE 审计日志可能明文记录 `mcp_svc` 的密码（见「P2 整体评审（opus）」的 FE audit log 一条）。
+
+### 2026-09-27 D8：推送到私有仓库
+- 用户确认「可以push」，并选择新建**私有**仓库 → `gh repo create lijingfz/Doris-mcp-skill-Demo --private --source . --remote origin --push`：推送 `main`（到 `787e680`），`main` 跟踪 `origin/main`，仓库 visibility = PRIVATE。推送前 `check-secrets: OK (693 files scanned)`，工作区干净。
+- 仓库里包含 `prepare/` 的 Doris 主机地址、提交邮箱里的开发机内网 IP，所以仓库必须保持私有；以后每次 push 仍需用户确认。
