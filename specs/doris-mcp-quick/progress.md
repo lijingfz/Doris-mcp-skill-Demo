@@ -4,13 +4,13 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P2 完成（分支 `p2-doris`，T2.1–T2.7 已全部提交，`plans/P2-doris.md` 的「P2 完成标准」已全部勾选）；P2 整体评审（opus）已完成，结论 With fixes（0 Critical / 1 Important / 4 Minor），I1 的离线部分已提交；等待重新发布 `ecom`（GATE）和用户决定合并方式（Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。P0、P1 已完成并本地合并到 `main`
-- **进行中**：无（P2 整体评审 I1 的离线修复已提交：`gmv_last_year` / `gmv_yoy` 的 description 写明 2025 年期间返回 0 表示无数据；已发布的 `ecom` 仍是 semantic_version 2，还没有这段说明）
-- **下一步**：**GATE**：以 root 用 `doris/publish-semantic.sh`（`APPLY=1`）重新发布 `ecom`（semantic_version 2 → 3，本地只有 `metrics.yaml` 变化）→ 以 `mcp_svc` 重跑 `reconcile.py mcp`，期望已发布 22 个指标与本地一致、`11/11 cases match` → 用户决定合并方式（D8，不 push）；然后编写 `plans/P3-deploy.md`（P2 整体评审的遗留事项 M1–M4、T3.5、P3、FE audit log 见日志「P2 整体评审（opus）」）。P1 / P0 整体评审小修已在 T2.7 完成（P1 ①–④、P0 M-2 / M-8）；P0 评审 M-1、M-3、M-4 在 T4.1、T4.4、T3.4，M-5、M-6、M-7、M-9 不做。R-26 验收证据见 T2.6（`mcp_svc` 经进程内 MCP server：已发布 22 个指标与本地一致，`query_metric` 与故事线 SQL 11/11 到分一致）
+- **阶段**：P2 完成（分支 `p2-doris`，T2.1–T2.7 已全部提交，`plans/P2-doris.md` 的「P2 完成标准」已全部勾选）；P2 整体评审（opus）已完成，结论 With fixes（0 Critical / 1 Important / 4 Minor），I1 已修复并重新发布（`ecom` semantic_version 3，`reconcile.py mcp` 11/11）；等待用户决定合并方式（Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。P0、P1 已完成并本地合并到 `main`
+- **进行中**：无
+- **下一步**：用户决定合并方式（D8，不 push）；然后编写 `plans/P3-deploy.md`（P2 整体评审的遗留事项 M1–M4、T3.5、P3、FE audit log 见日志「P2 整体评审（opus）」）。P1 / P0 整体评审小修已在 T2.7 完成（P1 ①–④、P0 M-2 / M-8）；P0 评审 M-1、M-3、M-4 在 T4.1、T4.4、T3.4，M-5、M-6、M-7、M-9 不做。R-26 验收证据见 T2.6（`mcp_svc` 经进程内 MCP server：已发布 22 个指标与本地一致，`query_metric` 与故事线 SQL 11/11 到分一致）
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
-- **Doris 变更**：T2.5 以 root 新建库 `system_mcp` 和 3 张表 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom`；workspace `ecom` 的 `semantic_version=2`，active 10 个文件，staging 为空；没有执行任何 GRANT，`ecom` 库未改动。回滚（需 GATE）：root 执行 `DROP DATABASE system_mcp`。T2.2 以 root 新建用户 `'mcp_svc'@'%'`（密码 = Secrets Manager `doris-mcp/mcp_svc`），权限按 R-42：`internal.ecom` SELECT、`internal.system_mcp` SELECT + CREATE（另有 Doris 默认的 `internal.information_schema`、`internal.mysql` SELECT 和默认 workload group `normal` 的 USAGE）；不授予 ADMIN / LOAD / ALTER / DROP；host `'%'` 按 D6，P3 T3.5 收紧为 `'172.31.%'`。回滚（需 GATE）：root 执行 `DROP USER 'mcp_svc'@'%'`。T2.3 以 `mcp_svc` 复核权限矩阵 14/14：upstream store 初始化成功（对象都已存在），9 个写探针全部被 Doris 拒绝，没有任何变更。T2.6 以 `mcp_svc` 经进程内 MCP server 只读对账 11/11，没有任何变更。此前 spec 阶段只用 `demo_ro` 做过只读查询
+- **Doris 变更**：T2.5 以 root 新建库 `system_mcp` 和 3 张表 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom`；workspace `ecom` 的 `semantic_version=3`（T2.5 发布为 2；P2 整体评审 I1 重新发布为 3，只改了 `metrics.yaml`），active 10 个文件，staging 为空；没有执行任何 GRANT，`ecom` 库未改动。回滚（需 GATE）：root 执行 `DROP DATABASE system_mcp`。T2.2 以 root 新建用户 `'mcp_svc'@'%'`（密码 = Secrets Manager `doris-mcp/mcp_svc`），权限按 R-42：`internal.ecom` SELECT、`internal.system_mcp` SELECT + CREATE（另有 Doris 默认的 `internal.information_schema`、`internal.mysql` SELECT 和默认 workload group `normal` 的 USAGE）；不授予 ADMIN / LOAD / ALTER / DROP；host `'%'` 按 D6，P3 T3.5 收紧为 `'172.31.%'`。回滚（需 GATE）：root 执行 `DROP USER 'mcp_svc'@'%'`。T2.3 以 `mcp_svc` 复核权限矩阵 14/14：upstream store 初始化成功（对象都已存在），9 个写探针全部被 Doris 拒绝，没有任何变更。T2.6 以 `mcp_svc` 经进程内 MCP server 只读对账 11/11，没有任何变更。此前 spec 阶段只用 `demo_ro` 做过只读查询
 
 ## 日志
 
@@ -277,3 +277,10 @@
   - **FE audit log（给用户）**：在 Doris 主机上对 `fe.audit.log` 一次性搜索 `IDENTIFIED BY`，如果 `mcp_svc` 的密码以明文出现就轮换密码；两步都是 GATE（Doris 4.x 可能已经 mask 了这类语句）。
 - 提交前 `bash scripts/check-secrets.sh` → `check-secrets: OK (693 files scanned)`。
 - Doris 无变更；没有创建或修改 AWS 资源（check-secrets 块 1b 只读取 Secrets Manager 里的密码，用于精确值扫描）。
+
+### 2026-09-27 P2 整体评审 I1 重新发布（GATE）
+- 用户确认（「可以，请继续」）→ 主会话先跑离线 dry-run：`offline checks ok: 10 files, 22 metrics, 9 physical tables`，只有 `metrics.yaml` 变化（4671 字节，sha256 `211b5274a979`）。
+- `APPLY=1 bash doris/publish-semantic.sh`（root，输出经过滤器屏蔽主机和 IPv4），exit 0：`physical check ok: 9 tables and their column exprs exist`；`remote: semantic_version=2, 10 files; staging: 0 rows`；`plan: add [], change ['metrics.yaml'], remove []`；`published workspace=ecom semantic_version=3 (10 files: +0 ~1 -0)`。没有执行任何 GRANT。
+- 以 `mcp_svc` 重跑 `reconcile.py mcp`（同 T2.6 Step 1，经过滤器），exit 0：`published metrics: 22 match …/doris/semantic/ecom`，11 个用例全部 `ok`（行数与 T2.6 相同），`11/11 cases match`。
+- 复审（opus）：I1 已解决，修复没有引入 Critical / Important；两处文档小问题（design 头部状态、semantic.py 行号差一）记为延后，头部状态已在本次更新。
+- Doris 变更：`ecom` semantic_version 2 → 3（只改 `metrics.yaml` 的两段 description）；没有创建或修改 AWS 资源。
