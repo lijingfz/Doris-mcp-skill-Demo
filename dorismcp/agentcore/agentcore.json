@@ -12,7 +12,7 @@
       "name": "dorismcp",
       "build": "CodeZip",
       "entrypoint": "mcp_server.py",
-      "codeLocation": "../spike/p0-mcp/",
+      "codeLocation": "../mcp-server/",
       "runtimeVersion": "PYTHON_3_12",
       "envVars": [
         {
@@ -26,6 +26,14 @@
         {
           "name": "DORIS_HTTP_PORT",
           "value": "8030"
+        },
+        {
+          "name": "DORIS_SECRET_ID",
+          "value": "doris-mcp/mcp_svc"
+        },
+        {
+          "name": "PROFILE_SCOPE",
+          "value": "all"
         }
       ],
       "networkMode": "VPC",
@@ -43,7 +51,8 @@
         "enableOtel": false
       },
       "protocol": "MCP",
-      "authorizerType": "AWS_IAM"
+      "authorizerType": "AWS_IAM",
+      "executionRoleArn": "arn:aws:iam::890717383483:role/doris-mcp-runtime-role"
     }
   ],
   "memories": [],

@@ -4,13 +4,13 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P3 执行中（分支 `p3-deploy`，Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。计划和 spec 修订（design v0.5、requirements v1.4）已在 T3.0 Step 1 提交（`9815838`）；**T3.0 完成**（M1–M4 `3ca8820`，补丁 P-09 `7115758`）；**T3.1 完成**（IAM 角色 `doris-mcp-runtime-role` 已建，GATE 由用户确认；`state.env` 有 `RT_ROLE_ARN`；Runtime 仍用 CDK 角色，T3.2 deploy 后才换成它）。P0、P1、P2 已完成并本地合并到 `main`，P2 已推送到私有仓库（`787e680`）；`178be68`（D8 记录）尚未推送，用户要求等 P3 完成后一起推送
-- **进行中**：无（T3.1 的任务评审由控制方安排）
-- **下一步**：T3.2 [AI+GATE]：锁定 `caio`、`platformdirs`，`render-agentcore.py --phase server`（写 `executionRoleArn` = `RT_ROLE_ARN`）生成 `agentcore.json`，deploy 前确认 `~/.agentcore/config.json` 有 `"disableTransactionSearch": true`，`agentcore deploy` 是 GATE（换代码和执行角色，同时删除 CDK 角色）。之后 T3.3 → T3.4 → T3.5；其余 2 个 GATE：T3.4 同步 Gateway target、T3.5 迁移 `mcp_svc` 的 host。P2 整体评审遗留事项的去向：M1–M4 已在 T3.0 完成；Runtime 角色 GetSecretValue 只限 `DORIS_SECRET_ARN` → T3.1 已完成（T3.2 deploy 后生效）；host 迁移 → T3.5（更正见日志「P3 计划编写」）；FE audit log → T3.5 Step 14（用户侧）。P0 评审 M-4 → T3.3 / T3.4；M-1、M-3 在 T4.1、T4.4。**注意**：M4 之后 `check-secrets.sh` 读不到 secret 就是 `FAILED`（exit 1），每个收尾步骤都需要有效的 AWS 凭证（账号 `890717383483`）
+- **阶段**：P3 执行中（分支 `p3-deploy`，Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。计划和 spec 修订（design v0.5、requirements v1.4）已在 T3.0 Step 1 提交（`9815838`）；**T3.0 完成**（M1–M4 `3ca8820`，补丁 P-09 `7115758`）；**T3.1 完成**（IAM 角色 `doris-mcp-runtime-role` 已建，GATE 由用户确认；`state.env` 有 `RT_ROLE_ARN`）；**T3.2 完成**（锁定传递依赖 `caio==0.12.5`、`platformdirs==4.11.15`，CodeZip 与 `.venv` 的 88 个 dist 一致；`agentcore deploy` 的 GATE 由用户确认，Runtime `dorismcp_dorismcp` 原地更新到 version 2，执行角色换成 `doris-mcp-runtime-role`，CDK 生成的执行角色已删除，`RUNTIME_ARN` 不变）。P0、P1、P2 已完成并本地合并到 `main`，P2 已推送到私有仓库（`787e680`）；`178be68`（D8 记录）尚未推送，用户要求等 P3 完成后一起推送
+- **进行中**：无（T3.2 的任务评审由控制方安排）
+- **下一步**：T3.3 [AI]：SigV4 直连 Runtime 冒烟（12 个工具 + flow）；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s；`reconcile.py mcp --url` 11/11；Doris 连接来源都在 `172.31.`。**注意**：Gateway target 仍缓存着 spike 的工具列表，T3.4 同步之前经 Gateway 看到的还是旧工具（Quick 在 P4 才接入，没有影响）。之后 T3.4 → T3.5；其余 2 个 GATE：T3.4 同步 Gateway target、T3.5 迁移 `mcp_svc` 的 host。P2 整体评审遗留事项的去向：M1–M4 已在 T3.0 完成；Runtime 角色 GetSecretValue 只限 `DORIS_SECRET_ARN` → T3.1 已完成（T3.2 deploy 后已生效）；host 迁移 → T3.5（更正见日志「P3 计划编写」）；FE audit log → T3.5 Step 14（用户侧）。P0 评审 M-4 → T3.3 / T3.4；M-1、M-3 在 T4.1、T4.4。**注意**：M4 之后 `check-secrets.sh` 读不到 secret 就是 `FAILED`（exit 1），每个收尾步骤都需要有效的 AWS 凭证（账号 `890717383483`）
 - **spec 阶段的临时产物**：`/tmp/p3-stage`（detached worktree，`712e73e`，计划里全部代码的来源）和 `/tmp/p3-build/`（生成器与回放脚本）只在计划修改时需要；计划确认后可以 `git worktree remove --force /tmp/p3-stage`。它们在 `/tmp`，重启会丢，**权威版本是 `plans/P3-deploy.md` 里嵌入的代码**
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
-- **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；IAM 角色 `doris-mcp-runtime-role`（内联策略 `doris-mcp-runtime`，没有托管策略，T3.1；T3.2 deploy 之后 Runtime 才使用）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
+- **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp`，version 2，执行角色 `doris-mcp-runtime-role`；CDK 生成的执行角色和它的 DefaultPolicy 已在 T3.2 删除，栈里没有 IAM 资源）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；IAM 角色 `doris-mcp-runtime-role`（内联策略 `doris-mcp-runtime`，没有托管策略，T3.1；T3.2 起是 Runtime 的执行角色）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
 - **Doris 变更**：T2.5 以 root 新建库 `system_mcp` 和 3 张表 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom`；workspace `ecom` 的 `semantic_version=3`（T2.5 发布为 2；P2 整体评审 I1 重新发布为 3，只改了 `metrics.yaml`），active 10 个文件，staging 为空；没有执行任何 GRANT，`ecom` 库未改动。回滚（需 GATE）：root 执行 `DROP DATABASE system_mcp`。T2.2 以 root 新建用户 `'mcp_svc'@'%'`（密码 = Secrets Manager `doris-mcp/mcp_svc`），权限按 R-42：`internal.ecom` SELECT、`internal.system_mcp` SELECT + CREATE（另有 Doris 默认的 `internal.information_schema`、`internal.mysql` SELECT 和默认 workload group `normal` 的 USAGE）；不授予 ADMIN / LOAD / ALTER / DROP；host `'%'` 按 D6，P3 T3.5 收紧为 `'172.31.%'`。回滚（需 GATE）：root 执行 `DROP USER 'mcp_svc'@'%'`。T2.3 以 `mcp_svc` 复核权限矩阵 14/14：upstream store 初始化成功（对象都已存在），9 个写探针全部被 Doris 拒绝，没有任何变更。T2.6 以 `mcp_svc` 经进程内 MCP server 只读对账 11/11，没有任何变更。此前 spec 阶段只用 `demo_ro` 做过只读查询
 
 ## 日志
@@ -357,3 +357,54 @@
   - 线上只读 dry-run（经 IP / URL sed）仍然输出 `role exists: arn:aws:iam::890717383483:role/doris-mcp-runtime-role`、一行 `DRY-RUN: aws iam put-role-policy …`、`DRY-RUN: state_set …` 和 `done (APPLY=0)`；`git diff --stat infra/state.env` 为空。
   - 没有执行 APPLY=1，没有创建或修改 AWS 资源，Doris 无变更。
   - 暂不处理（控制方决定）：角色已存在时的策略漂移检查、测试不受外部 export 的 `DORIS_SECRET_ARN` 影响、其他测试缺口、render 的 `missing` 列表里加 `ACCOUNT_ID`。
+
+### 2026-09-27 T3.2 锁定 CodeZip 依赖，deploy 完整 server（换执行角色）[GATE]
+- Step 1：分支 `p3-deploy`，工作区干净，`RT_ROLE_ARN=arn:aws:iam::890717383483:role/doris-mcp-runtime-role`。
+- Step 2（本机以 `mcp_svc` 跑将要部署的代码，凭证经 Secrets Manager，与 Runtime 相同；只读），与计划「期望」逐行一致：
+  - `"wait_timeout": 600`（P-09 在真实 Doris 上生效，不是默认的 28800）、`tools: 12`、`flow: 6/6 passed`；
+  - 启动行 `Auth: service mode, MCP auth delegated to the edge; Doris user mcp_svc` 和 `Doris MCP for AgentCore: Doris <ip>:9030 (http 8030) as mcp_svc, profile scope all, workspace /tmp/p3-local-ws`（经 IP sed）；
+  - 日志里 Traceback / ERROR / CRITICAL `0` 行，`mcp_svc` 的密码命中 `0` 次；
+  - server 按端口停止；原始日志没有打印；这次没有单独测 `list_metrics` 首调耗时（T3.3 在 Runtime 上测）。
+- Step 3（红）：`/tmp/p3-codezip-check.sh`（临时脚本，不进仓库）按 CLI 的方式解析（uv，`aarch64-manylinux_2_28`，`--only-binary :all:`）：88 个 dist 里 2 个与 `.venv` 不同，exit 1。与 spec 阶段相同，PyPI 没有更新的版本：
+  - `caio`：CodeZip 0.12.9，`.venv` 0.12.5（`aiofile` → `caio`）；
+  - `platformdirs`：CodeZip 4.12.0，`.venv` 4.11.15（`fastmcp-slim` → `platformdirs`）。
+- Step 4-5（绿）：`mcp-server/pyproject.toml` 锁定 `caio==0.12.5`、`platformdirs==4.11.15`（`UPSTREAM.md` 的 P-07 行已说明），`git apply` rc=0。
+  - 结果 `CodeZip: 88 dists, 0 differ from .venv`、exit 0；
+  - 自检：不存在的目录 → `FAIL: no *.dist-info in …`、exit 1；
+  - 锁定的版本与 `.venv` 相同，`.venv` 不用重装，测试不用重跑。
+- Step 6：`disableTransactionSearch` = `True`。
+- Step 7（render `--phase server`），与「期望」一致：
+  - 1 个 runtime：`dorismcp`、`../mcp-server/`、`mcp_server.py`、VPC、MCP、AWS_IAM；
+  - `executionRoleArn` = `doris-mcp-runtime-role`；
+  - env 共 5 个名字（`DORIS_HOST` 不打印）；
+  - `agentcore.json` 改动 13 行（+11/-2），`aws-targets.json` 不变。
+- Step 8（validate + `deploy --diff`，只读）：过滤后的输出和计划「期望」`diff` 0 差异（Output 行的截断也相同）：
+  - `Valid`；5 组 `│ - │`：CDK 角色的全部权限；
+  - `[-]` CDK 执行角色和它的 DefaultPolicy：destroy；
+  - `[~]` Runtime 原地更新：新增 env `DORIS_SECRET_ID`、`PROFILE_SCOPE`，RoleArn 换成 `doris-mcp-runtime-role`；
+  - `[~]` Output `RoleArnOutput`；`Number of stacks with differences: 1`；
+  - 另对原始日志只计数：replace 标记 0、新增 `[+]` 资源 0、Runtime destroy 0，IAM 行只有上述 2 个 destroy；
+  - staging 目录 `88 dists, 0 differ`。
+- GATE（Step 9）：用户确认「可以部署」，由控制方执行了一次 `(cd dorismcp && agentcore deploy -y -v) > /tmp/t32-deploy.log 2>&1`（约 12:53 UTC 开始）。
+  - 结果：exit 0；CLI 日志 `deploy-20260927-125309.log` 有 9 个 `Status: SUCCESS`、`COMPLETED SUCCESSFULLY`、`Total Duration: 1m 17s`（P0 为 5m 41s）。
+- **Transaction search 提示**：deploy 输出里有一行 `Note: Transaction search enabled. …`，这行提示是误导性的：
+  - 控制方查了 agentcore CLI 0.30.0 源码：`~/.agentcore/config.json` 有 `disableTransactionSearch: true` 时，`setupTransactionSearch` 直接返回成功，而这条提示在任何成功情况下都会打印，所以没有调用任何 X-Ray / indexing API；
+  - 只读 `aws xray get-trace-segment-destination` 仍是 `CloudWatchLogs ACTIVE`，与 P0 相同。
+- Step 10（只读），与「期望」一致：
+  - `9` / `COMPLETED SUCCESSFULLY` / `Total Duration: 1m 17s`；
+  - `deployed READY arn:aws:iam::890717383483:role/doris-mcp-runtime-role`；
+  - `runtime dorismcp_dorismcp: status=READY version=2`，没有 WARN。
+- Step 11，与「期望」一致：
+  - 由 implementer 执行 `APPLY=1 bash infra/25-runtime-state.sh`：AWS 只读、只写 `state.env`，按计划不是 GATE，控制方已裁定。输出 `4` 行 `state: RUNTIME_*=`；
+  - `state.env` 只有 `RUNTIME_ROLE_ARN` 一行变化：`AgentCore-dorismcp-defaul-ApplicationAgentDorismcpR-30Mcwi4tCmaV` → `doris-mcp-runtime-role`；`RUNTIME_ARN`、`RUNTIME_ID`、`RUNTIME_URL` 不变（diff 经 IP / URL sed 查看）；
+  - `get-agent-runtime`：`status` READY、`version` `"2"`、`role` `doris-mcp-runtime-role`、`env` 是那 5 个名字、`network` VPC；
+  - 栈里 `AWS::IAM::*` 资源 `0` 个；
+  - 旧角色 `AgentCore-dorismcp-defaul-ApplicationAgentDorismcpR-30Mcwi4tCmaV` 的 `get-role` 返回 NoSuchEntity（计数 `1`）。
+- Step 12：deploy 实际打包的 staging 是 `CodeZip: 88 dists, 0 differ from .venv`、exit 0，里面有 `config`、`mcp_server.py`、`src`。
+- 提交前核对：`git diff --stat` 共 5 个文件（不含 tasks / progress）：
+  - `.cli/deployed-state.json` 改了 4 行，只有 `roleArn`（新值是 `doris-mcp-runtime-role`）和 `deployHash`；
+  - `agentcore.json` 只有 `codeLocation`、新增的 `executionRoleArn`、2 个 env 项，以及 `authorizerType` 行尾的逗号，改动行里没有 IP / URL（只看键名，没有打印文件）。
+- 影响：Gateway target 仍指向同一个 Runtime ARN，但缓存的还是 spike 的工具列表，T3.4 同步。
+- 回滚（需 GATE）：`.venv/bin/python scripts/render-agentcore.py --phase spike`，然后再 deploy 一次；CDK 会重新生成执行角色，`doris-mcp-runtime-role` 保留不动。
+- 提交前 `bash scripts/check-secrets.sh` → `check-secrets: OK (700 files scanned)`。
+- Doris 无变更：`mcp_svc` 只经本机 MCP server 做了只读调用。除了 GATE 里的这一次 deploy（更新栈 `AgentCore-dorismcp-default`：Runtime 原地更新，删除 CDK 角色和策略），没有创建或修改其他 AWS 资源。没有 push。
