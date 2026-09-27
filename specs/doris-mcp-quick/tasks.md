@@ -45,7 +45,7 @@
 | ✓ | ID | 标签 | 任务 | 需求 | 计划 |
 |---|---|---|---|---|---|
 | [x] | T2.1 | [AI+GATE] | `infra/40-doris-secret.sh`：Secrets Manager `doris-mcp/mcp_svc`（Secrets Manager 生成 32 位字母数字密码，不显示），ARN 写入 `state.env`；`scripts/check-secrets.sh` 增加块 1b：对 Secrets Manager 里的密码做精确值扫描 | R-31, R-43 | P2 §T2.1 |
-| [ ] | T2.2 | [AI+GATE] | `doris/01_mcp_user.sql` + `doris/admin_sql.py` + `doris/apply-admin-sql.sh`：root 建 `mcp_svc` 并授权（secret 经管道进入 python，只在内存里填进 SQL；语句白名单；输出 mask）| R-35, R-42 | P2 §T2.2 |
+| [x] | T2.2 | [AI+GATE] | `doris/01_mcp_user.sql` + `doris/admin_sql.py` + `doris/apply-admin-sql.sh`：root 建 `mcp_svc` 并授权（secret 经管道进入 python，只在内存里填进 SQL；语句白名单；输出 mask）| R-35, R-42 | P2 §T2.2 |
 | [ ] | T2.3 | [AI+GATE] | `doris/permission_matrix.py`：以 `mcp_svc` 检查 `SHOW GRANTS` 恰好是 R-42（+ Doris 默认项）、库列表、9 张表可读、`ecom` 已发布；GATE 后跑 upstream store 初始化（须成功）+ 9 个写探针（须全部被拒，每个即使被允许也不改变数据），14/14 | R-21, R-42 | P2 §T2.3 |
 | [x] | T2.4 | [AI] | `doris/semantic/ecom/*.yaml`（10 个文件、22 个指标、time spine `dim_date`）+ `doris/reconcile.py`（11 个故事线对账用例）；`demo_ro` 只读跑 `direct` 模式 11/11 | R-26 | P2 §T2.4 |
 | [x] | T2.5 | [AI+GATE] | `doris/publish_semantic.py` + `doris/publish-semantic.sh`（方案 C）：root 在本机进程内调用 upstream `DorisStore` 发布（离线校验 bootstrap + MetricFlow 引擎 + 重名，物理表校验，staging → commit → 回读比对）；不起 Web UI，不执行 upstream `commit_staging` 的 `GRANT … TO '%'` | R-26 | P2 §T2.5 |
