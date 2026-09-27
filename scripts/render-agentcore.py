@@ -2,7 +2,8 @@
 """Upsert runtime `dorismcp` in dorismcp/agentcore/agentcore.json and fill aws-targets.json.
 
   --phase spike   codeLocation ../spike/p0-mcp/  (P0 / T0.4)
-  --phase server  codeLocation ../mcp-server/    (P3 / T3.2: adds DORIS_SECRET_ID, PROFILE_SCOPE)
+  --phase server  codeLocation ../mcp-server/    (P3 / T3.2: adds DORIS_SECRET_ID, PROFILE_SCOPE and
+                  executionRoleArn = RT_ROLE_ARN, the role of infra/35-runtime-role.sh)
 
 Values come from infra/state.env. Only non-secret values are written; env var names that
 look like secrets are refused. codeLocation is relative to the project dir (dorismcp/).
@@ -19,6 +20,7 @@ PROJECT_DIR = ROOT / "dorismcp" / "agentcore"
 RUNTIME_NAME = "dorismcp"
 CODE_LOCATIONS = {"spike": "../spike/p0-mcp/", "server": "../mcp-server/"}
 SECRET_LIKE = re.compile(r"PASSWORD|TOKEN|SECRET_VALUE|ACCESS_KEY")
+EXECUTION_ROLE_NAME = "doris-mcp-runtime-role"
 
 
 def load_state(path: pathlib.Path) -> dict[str, str]:
@@ -37,6 +39,14 @@ def runtime_entry(phase: str, state: dict[str, str]) -> dict:
     bad = [k for k in env if SECRET_LIKE.search(k)]
     if bad:
         sys.exit(f"refusing secret-looking env vars: {bad}")
+    role = {}
+    if phase == "server":
+        # Without it the CLI's CDK creates a role that may invoke any Bedrock model (design §7).
+        want = f"arn:aws:iam::{state.get('ACCOUNT_ID', '')}:role/{EXECUTION_ROLE_NAME}"
+        if state.get("RT_ROLE_ARN") != want:
+            sys.exit(f"RT_ROLE_ARN in infra/state.env must be {want} (run infra/35-runtime-role.sh), "
+                     f"got {state.get('RT_ROLE_ARN') or 'nothing'}")
+        role = {"executionRoleArn": want}
     return {
         "name": RUNTIME_NAME,
         "build": "CodeZip",
@@ -52,14 +62,15 @@ def runtime_entry(phase: str, state: dict[str, str]) -> dict:
         "instrumentation": {"enableOtel": False},
         "protocol": "MCP",
         "authorizerType": "AWS_IAM",
+        **role,
     }
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--phase", choices=sorted(CODE_LOCATIONS), required=True)
     parser.add_argument("--check", action="store_true", help="print the entry, do not write")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     state = load_state(ROOT / "infra" / "state.env")
     missing = [k for k in ("DORIS_PRIVATE_IP", "SUBNET_AZ4", "SUBNET_AZ1", "SUBNET_AZ2", "RT_SG") if not state.get(k)]
