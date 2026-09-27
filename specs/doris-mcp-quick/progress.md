@@ -5,12 +5,12 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P2 执行中（Subagent-driven，implementer / reviewer 全部用 Opus 5.5；计划 `plans/P2-doris.md` 已通过用户 review）。P0、P1 已完成并本地合并到 `main`
-- **进行中**：无（分支 `p2-doris`；T2.1、T2.4 已完成，T2.5 尚未开始）
-- **下一步**：T2.5 **[GATE]**（`doris/publish_semantic.py` + `doris/publish-semantic.sh`，方案 C：root 在本机进程内调用 upstream `DorisStore`，把 `doris/semantic/ecom/` 发布为 workspace `ecom`；先离线校验，再给用户看 dry-run，确认后才 `APPLY=1`）。执行顺序 T2.1 ✅ → T2.4 ✅ → T2.5 → T2.2 → T2.3 → T2.6 → T2.7；4 个 GATE（T2.1 建 secret —— 已完成、T2.5 root 发布、T2.2 root 建 `mcp_svc` 并授权、T2.3 以 `mcp_svc` 写探针）每次都先给用户看 dry-run，确认后才 `APPLY=1`。T2.7 = P1 整体评审 ①–④ + P0 评审 M-2、M-8（纯离线）；P0 评审 M-1 / M-3 / M-4 已写进 T4.1 / T4.4 / T3.4，M-5、M-6、M-7、M-9 不做
+- **进行中**：无（分支 `p2-doris`；T2.1、T2.4、T2.5 已完成，T2.2 尚未开始）
+- **下一步**：T2.2 **[GATE]**（`doris/01_mcp_user.sql` + `doris/admin_sql.py` + `doris/apply-admin-sql.sh`：root 建 `mcp_svc` 并授权，secret 经管道进入 python，只在内存里填进 SQL；语句白名单；输出 mask；先给用户看 dry-run，确认后才 `APPLY=1`）。执行顺序 T2.1 ✅ → T2.4 ✅ → T2.5 ✅ → T2.2 → T2.3 → T2.6 → T2.7；4 个 GATE（T2.1 建 secret —— 已完成、T2.5 root 发布 —— 已完成、T2.2 root 建 `mcp_svc` 并授权、T2.3 以 `mcp_svc` 写探针）每次都先给用户看 dry-run，确认后才 `APPLY=1`。T2.7 = P1 整体评审 ①–④ + P0 评审 M-2、M-8（纯离线）；P0 评审 M-1 / M-3 / M-4 已写进 T4.1 / T4.4 / T3.4，M-5、M-6、M-7、M-9 不做
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
-- **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
+- **Doris 变更**：T2.5 以 root 新建库 `system_mcp` 和 3 张表 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom`；workspace `ecom` 的 `semantic_version=2`，active 10 个文件，staging 为空；没有执行任何 GRANT，`ecom` 库未改动。回滚（需 GATE）：root 执行 `DROP DATABASE system_mcp`。此前 spec 阶段只用 `demo_ro` 做过只读查询
 
 ## 日志
 
@@ -205,3 +205,11 @@
 
 ### 2026-09-27 T2.4 评审修复
 - 评审（Important）：`mcp` 模式下的意外异常（传输错误、响应缺 `data.rows` 的 KeyError、`client_factory` / `build_server` / `load_settings` 抛出的非 `SettingsError`）会以未 mask 的 traceback 输出。修复：`reconcile()` 把任意 `Exception` 记为该用例的 FAIL（mask 后输出，继续跑后面的用例，照常打印汇总行）；`main()` 对这类异常只输出一行 mask 过的 `FAILED: <类型>: <信息>` 并返回 1（用法 / 配置错误仍返回 2，`KeyboardInterrupt` 照常抛出）。先加 2 个测试（红：2 个 RuntimeError 带着假主机和假密码直接抛出），修复后 `doris/test` 共 43 个测试全部通过。
+
+### 2026-09-27 T2.5 以 root 发布 `ecom` 语义层（方案 C，无 GRANT）[GATE]
+- TDD：新建 `doris/test/test_publish_semantic.py`，先红（`Ran 44 tests`、`FAILED (errors=1)`，`No module named 'publish_semantic'`），写 `doris/publish_semantic.py` 后 `doris/test` 共 68 个测试全部通过（新增 25 个）。计划写的是 42 / 66，差的 2 个是 T2.4 评审修复新增的测试（43 + 1、43 + 25）。新建 `doris/test/test-publish-semantic.sh`，先红（wrapper 不存在，exit 127，`9 failed`），写 `doris/publish-semantic.sh` 后 12/12 通过。4 个文件与计划逐字节一致。
+- Step 9 dry-run（不连 Doris）与计划期望逐行一致：`offline checks ok: 10 files, 22 metrics, 9 physical tables (bootstrap, MetricFlow engine, duplicate names)`、`DRY-RUN: would publish workspace=ecom as root:`、按文件名排序的 10 行 `file:`（字节数 453 / 705 / 4297 / 1512 / 2308 / 324 / 1528 / 782 / 1151 / 629）、5 步计划、`DRY-RUN: no GRANT is executed; APPLY=1 to publish`。
+- **用户确认（「可以执行」）→ `APPLY=1 bash doris/publish-semantic.sh`**（由主会话执行一次），exit 0，输出与计划期望完全一致（经过滤器屏蔽主机和密码，实际没有命中）：`offline checks ok: 10 files, 22 metrics, 9 physical tables (bootstrap, MetricFlow engine, duplicate names)`；`physical check ok: 9 tables and their column exprs exist`；`remote: semantic_version=1, 0 files; staging: 0 rows`；`plan: add ['brands.yaml', 'categories.yaml', 'metrics.yaml', 'order_items.yaml', 'orders.yaml', 'project.yaml', 'refunds.yaml', 'regions.yaml', 'reviews.yaml', 'shops.yaml'], change [], remove []`；`published workspace=ecom semantic_version=2 (10 files: +10 ~0 -0)`。
+- Doris 变更：root 新建库 `system_mcp` 和 3 张表 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom`；upstream 初始化时插入 `ecom` 的元数据行（`semantic_version=1`），commit 后为 2，active 10 个文件，staging 清空。没有执行任何 GRANT（不调用 upstream `commit_staging`），`ecom` 库未改动。发布结果在 T2.3、T2.6 里以 `mcp_svc` 身份复核。
+- 回滚（需 GATE）：root 执行 `DROP DATABASE system_mcp`（本阶段之前它不存在）。
+- implementer 自查备注（未改代码）：`test_unparseable_models_are_rejected` 会输出一行 upstream `bootstrap.py:277` 的 ERROR 日志（`logging.disable(logging.WARNING)` 不屏蔽 ERROR），测试照常通过；upstream `_ensure_tables` 把建表失败只记在 WARNING 级别，被脚本屏蔽，出错时只能看到后续 mask 过的错误。
