@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P3 全部任务完成（T3.0–T3.5），等待 P3 整体评审（分支 `p3-deploy`，Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。计划和 spec 修订（design v0.5、requirements v1.4）已在 T3.0 Step 1 提交（`9815838`）；**T3.0 完成**（M1–M4 `3ca8820`，补丁 P-09 `7115758`）；**T3.1 完成**（IAM 角色 `doris-mcp-runtime-role` 已建，GATE 由用户确认；`state.env` 有 `RT_ROLE_ARN`）；**T3.2 完成**（锁定传递依赖 `caio==0.12.5`、`platformdirs==4.11.15`，CodeZip 与 `.venv` 的 88 个 dist 一致；`agentcore deploy` 的 GATE 由用户确认，Runtime `dorismcp_dorismcp` 原地更新到 version 2，执行角色换成 `doris-mcp-runtime-role`，CDK 生成的执行角色已删除，`RUNTIME_ARN` 不变）；**T3.3 完成**（离线部分 `a6b15a2`：SigV4 客户端、`mcp_smoke.py time` / `conns`、`audit_check.py`、`reconcile.py mcp --url`；SigV4 直连 Runtime 12 个工具、flow 6/6、共享 session 和每次新 session 各 12 个调用都在 60 s 内、审计记录 24/24、对账 11/11、Doris 连接来源都在 `172.31.`，只读，没有 GATE）；**T3.4 完成**（GATE 由用户确认「可以执行」，控制方执行了一次 `SYNC=1 APPLY=1 bash infra/30-gateway.sh`；Gateway target `ENINDEEGGB` 同步后是 `doris___` 前缀的 12 个工具，flow 6/6；DEBUG 泄漏计数 ipv4 / password / traceback / arn 全是 0；经 Gateway 串行 12 个、20 并发 24 个调用都在 60 s 内、0 错误；并发后 24 个连接，11 分钟后只剩 `SHOW PROCESSLIST` 自己的 1 个，P-09 在线验证通过；审计记录 37/37；Gateway description 被 `update-gateway` 清空为 `None`，只影响控制台显示）；**T3.5 完成**（离线部分 `7df681c`：`doris/02_mcp_user_vpc.sql`、`admin_sql.py` 白名单加 `DROP USER IF EXISTS`（只允许先 CREATE 同一用户的另一个身份、且不删本脚本建立或授权的身份）、`permission_matrix.py --url / --expect-host`；GATE 由用户确认「可以执行」，控制方以 root 执行了一次 `APPLY=1 bash doris/apply-admin-sql.sh doris/02_mcp_user_vpc.sql`，`'mcp_svc'@'172.31.%'` 替换了 `'%'`；迁移后经 Runtime 复核 5/5、开发机直连 1045、对账 11/11、R-40 复核 3 个 SG 的 `0.0.0.0/0` 计数 0/0/0；FE 审计日志里 `mcp_svc` 密码命中 0，此项关闭）。P0、P1、P2 已完成并本地合并到 `main`，P2 已推送到私有仓库（`787e680`）；`178be68`（D8 记录）尚未推送，用户要求等 P3 完成后一起推送
-- **进行中**：无（T3.5 的任务评审由控制方安排）
-- **下一步**：P3 整体评审（全分支 `p3-deploy`）；之后由用户决定合并到 `main` 和推送（D8：`178be68` 与 P3 一起推送）。P3 没有剩下的 GATE。T3.5 之后开发机不能再以 `mcp_svc` 登录（1045，预期行为）：要以 `mcp_svc` 检查只能经 Runtime（`permission_matrix.py --url`、`reconcile.py mcp --url`、`mcp_smoke.py --sigv4`），本机的参照 SQL 用 `demo_ro`；P4、P5 不再直连 `mcp_svc`，T5.x 的复核照抄 T3.5 Step 9。P2 整体评审遗留事项全部关闭：M1–M4 → T3.0；Runtime 角色 GetSecretValue 只限 `DORIS_SECRET_ARN` → T3.1 / T3.2；host 迁移 → T3.5；FE audit log → T3.5 Step 14（密码命中 0）。P0 评审 M-4 → T3.3 / T3.4 已完成；M-1、M-3 在 T4.1、T4.4。VPC 里 4 个 `launch-wizard-*` SG 带 `0.0.0.0/0` 入站（不属于本系统，见日志「P3 计划编写」），是否清理由用户决定（需 GATE，不在计划内）。**注意**：M4 之后 `check-secrets.sh` 读不到 secret 就是 `FAILED`（exit 1），每个收尾步骤都需要有效的 AWS 凭证（账号 `890717383483`）
+- **阶段**：P3 全部任务完成（T3.0–T3.5），**P3 整体评审（opus）已完成：可以合并，0 Critical / 0 Important / 6 Minor**（分支 `p3-deploy`，Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。计划和 spec 修订（design v0.5、requirements v1.4）已在 T3.0 Step 1 提交（`9815838`）；**T3.0 完成**（M1–M4 `3ca8820`，补丁 P-09 `7115758`）；**T3.1 完成**（IAM 角色 `doris-mcp-runtime-role` 已建，GATE 由用户确认；`state.env` 有 `RT_ROLE_ARN`）；**T3.2 完成**（锁定传递依赖 `caio==0.12.5`、`platformdirs==4.11.15`，CodeZip 与 `.venv` 的 88 个 dist 一致；`agentcore deploy` 的 GATE 由用户确认，Runtime `dorismcp_dorismcp` 原地更新到 version 2，执行角色换成 `doris-mcp-runtime-role`，CDK 生成的执行角色已删除，`RUNTIME_ARN` 不变）；**T3.3 完成**（离线部分 `a6b15a2`：SigV4 客户端、`mcp_smoke.py time` / `conns`、`audit_check.py`、`reconcile.py mcp --url`；SigV4 直连 Runtime 12 个工具、flow 6/6、共享 session 和每次新 session 各 12 个调用都在 60 s 内、审计记录 24/24、对账 11/11、Doris 连接来源都在 `172.31.`，只读，没有 GATE）；**T3.4 完成**（GATE 由用户确认「可以执行」，控制方执行了一次 `SYNC=1 APPLY=1 bash infra/30-gateway.sh`；Gateway target `ENINDEEGGB` 同步后是 `doris___` 前缀的 12 个工具，flow 6/6；DEBUG 泄漏计数 ipv4 / password / traceback / arn 全是 0；经 Gateway 串行 12 个、20 并发 24 个调用都在 60 s 内、0 错误；并发后 24 个连接，11 分钟后只剩 `SHOW PROCESSLIST` 自己的 1 个，P-09 在线验证通过；审计记录 37/37；Gateway description 被 `update-gateway` 清空为 `None`，只影响控制台显示）；**T3.5 完成**（离线部分 `7df681c`：`doris/02_mcp_user_vpc.sql`、`admin_sql.py` 白名单加 `DROP USER IF EXISTS`（只允许先 CREATE 同一用户的另一个身份、且不删本脚本建立或授权的身份）、`permission_matrix.py --url / --expect-host`；GATE 由用户确认「可以执行」，控制方以 root 执行了一次 `APPLY=1 bash doris/apply-admin-sql.sh doris/02_mcp_user_vpc.sql`，`'mcp_svc'@'172.31.%'` 替换了 `'%'`；迁移后经 Runtime 复核 5/5、开发机直连 1045、对账 11/11、R-40 复核 3 个 SG 的 `0.0.0.0/0` 计数 0/0/0；FE 审计日志里 `mcp_svc` 密码命中 0，此项关闭）。P0、P1、P2 已完成并本地合并到 `main`，P2 已推送到私有仓库（`787e680`）；`178be68`（D8 记录）尚未推送，用户要求等 P3 完成后一起推送
+- **进行中**：无（P3 整体评审已完成，等待用户决定合并方式和推送）
+- **下一步**：由用户决定 `p3-deploy` 的合并方式和推送（D8：`178be68` 与 P3 一起推送，推送前再确认一次）；然后编写 `plans/P4-quick.md`（`tasks.md` 已链接，文件还不存在），用户 review 通过后才开始 P4。P3 整体评审的 6 个 Minor 和各任务遗留的 minor 见日志「P3 整体评审（opus）」，P4 / P5 计划编写时对照其中的「评审建议」。P3 没有剩下的 GATE。T3.5 之后开发机不能再以 `mcp_svc` 登录（1045，预期行为）：要以 `mcp_svc` 检查只能经 Runtime（`permission_matrix.py --url`、`reconcile.py mcp --url`、`mcp_smoke.py --sigv4`），本机的参照 SQL 用 `demo_ro`；P4、P5 不再直连 `mcp_svc`，T5.x 的复核照抄 T3.5 Step 9。P2 整体评审遗留事项全部关闭：M1–M4 → T3.0；Runtime 角色 GetSecretValue 只限 `DORIS_SECRET_ARN` → T3.1 / T3.2；host 迁移 → T3.5；FE audit log → T3.5 Step 14（密码命中 0）。P0 评审 M-4 → T3.3 / T3.4 已完成；M-1、M-3 在 T4.1、T4.4。VPC 里 4 个 `launch-wizard-*` SG 带 `0.0.0.0/0` 入站（不属于本系统，见日志「P3 计划编写」），是否清理由用户决定（需 GATE，不在计划内）。**注意**：M4 之后 `check-secrets.sh` 读不到 secret 就是 `FAILED`（exit 1），每个收尾步骤都需要有效的 AWS 凭证（账号 `890717383483`）
 - **spec 阶段的临时产物**：`/tmp/p3-stage`（detached worktree，`712e73e`，计划里全部代码的来源）和 `/tmp/p3-build/`（生成器与回放脚本）只在计划修改时需要；计划确认后可以 `git worktree remove --force /tmp/p3-stage`。它们在 `/tmp`，重启会丢，**权威版本是 `plans/P3-deploy.md` 里嵌入的代码**
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
@@ -476,3 +476,88 @@
 - SigV4 / `--url` 运行结束时 stderr 会多一行 `Session termination failed: 404`（Step 7 是 `502`）。这是 mcp SDK 在关闭 session 时发 DELETE、收到非 2xx 后打印的告警，出现在所有检查结束之后，是预期的，不影响结果（T3.3 也出现过）。
 - 所有在线输出都经 IP / URL sed（Step 13 只保留了「期望」里的 `13.125.9.110`），另存在 `.superpowers/sdd/P3-deploy/t35-step{1,7,9,10,11,12,13}.txt`、`t35-dryrun.txt`、`t35-apply.txt`（git 忽略）。
 - 提交前 `bash scripts/check-secrets.sh` → OK。没有创建或修改 AWS 资源（只有 get-agent-runtime、secretsmanager get-secret-value、ec2 describe-* 这些只读调用）；`infra/state.env` 没有变化。Doris 变更只有 GATE 里的这 5 条语句（见「当前状态 → Doris 变更」）。回滚（需 GATE）：`APPLY=1 bash doris/apply-admin-sql.sh doris/01_mcp_user.sql`，重建 `'mcp_svc'@'%'`。没有 push。
+
+### 2026-09-27 P3 整体评审（opus）
+- 范围：`178be68..edced3d`（11 个提交）。评审包里的 URL、Doris 私网 IP、开发机 IP 都已替换；评审者只读，没有连 Doris / Runtime / Gateway，也没有重跑整套测试。
+- 结论：**可以合并（Yes）**；0 Critical、0 Important、6 Minor；各任务已暂缓的 minor 没有被上调；评审者同意执行中的 7 条裁定。没有修复轮。
+- 评审确认的要点：
+  - IAM fail closed：secret ARN 精确匹配；只有 NoSuchEntity 才 create-role；`RT_ROLE_ARN` 精确比对后才写 `state.env`；栈里 0 个 IAM 资源；
+  - `admin_sql` 的 DROP 白名单；
+  - P-09 在线验证；
+  - 各工具都先 mask 再截断；`permission_matrix` / `reconcile` 都经 `agentcore_client.sigv4_client`；
+  - CodeZip 88 个 dist 与 `.venv` 一致。
+- 6 个 Minor（暂缓；是否在 P4 开始前处理由用户决定）：
+  1. `design.md` §13 的几行（完整 server 冷启动、经 Gateway 耗时、20 并发后的连接数）仍写成「T3.3 / T3.4 再测」，实测结果只在本文件的 T3.3 / T3.4 日志里。design 头部状态已在本次更新。
+  2. 「当前状态」的「进行中」一行过时：本次已更新。
+  3. `RESUME.md:90` 仍写「目前只有本地 git（D8）」，实际 P2 已推送到私有仓库（P3 之前就存在的问题）。
+  4. `doris/reconcile.py:335-342` 和 `doris/permission_matrix.py:339-346` 重复了同一段 lazy import（`sys.path` + `agentcore_client.sigv4_client`）。
+  5. design §7 的清理一行没有列出 `doris-mcp-gateway-role` 和 `doris-mcp-runtime-role`。它们不在 CDK 栈里，T5.6 要在删栈之后单独删除（都有 `Project` 标签）。
+  6. `tasks.md` 链接的 `plans/P4-quick.md` 还不存在；T5.5 一行没有写出 design §14 留给它的两个决定（`exceptionLevel`、2003 错误里的主机地址）。「下一步」已写明先编写 P4 计划。
+- 评审建议（编写 P4 / P5 计划时对照）：
+  - **URL mask**：T5.5 的演示前冒烟会复用 `mcp_smoke --sigv4`、`reconcile mcp --url`、`permission_matrix --url`。在此之前：
+    - 把 `--url`（和 `GW_URL`）加进各工具的 `secrets`，让错误输出里的 URL 被 mask；
+    - 给 `permission_matrix.py:458` 的 `conn.close()` 加保护。
+    - P3 的所有调用都经过了 MASK sed，所以目前没有泄漏。
+  - **60 s 预算**：经 Gateway 每次调用 5.3–10.1 s（含冷启动 microVM），`query_timeout = 50` s 的查询跑满时端到端约 56–61 s，可能超过 Quick 的 60 s。T4.4 记录 Quick 侧的端到端耗时（M-3）；如果接近 60 s，在 T5.5 考虑把 `query_timeout` 调到 40–45 s。
+  - **连接预算**：每个访问数据库的调用约占 1 个池连接，空闲最多保留 600 s（P-09）。也就是每 10 分钟约 100 个访问数据库的调用才会碰到 `max_user_connections = 100`。T5.4 两轮彩排后各跑一次 `mcp_smoke --sigv4 conns`。
+  - **Gateway description**：T5.5 重跑 `30-gateway.sh` 时 description 仍是 `None`（update 路径不传 `--description`），需要的话那时加上。
+- 控制方对评审者「未判定」8 项的裁定，都维持现状：
+  - `PROFILE_SCOPE=all`：D4，见 design §13；
+  - `runtime-exec.json` 的 `logs:PutResourcePolicy`：沿用 CDK 角色，只限本 Runtime 的日志组；
+  - 4 个 `launch-wizard-*` SG：不属于本系统，由用户决定；
+  - 账号级 X-Ray indexing rule 100%：P0 用户决定；
+  - 2003 错误里的主机地址：留给 T5.5；
+  - R-32 审计缺口：requirements v1.4，P5 由用户决定；
+  - deploy 时的「Transaction search enabled」提示：T3.2 已核对，是 no-op；
+  - FE 审计日志没有提供 `IDENTIFIED BY` 条数：见下面 T3.5 的一条。
+- **各任务评审遗留的 minor**（SDD 临时台账会删除，在这里保留；每条一行）：
+  - T3.0：`loader.py:69-70` 的 `session_wait_timeout_seconds` 没有校验（bool → 1、≤ 0、≤ `pool_idle_timeout`），只有 shipped-config 测试兜底。
+  - T3.0：`check-secrets.sh:34` 读不到 `credentials.env` 时仍是 WARN + OK，与 M4「没能执行的检查不算通过」不一致。
+  - T3.0：`permission_matrix` 的 `_mask` 只 mask 密码和主机，Doris 拒绝消息里的 `'mcp_svc'@'<client ip>'` 会保留（`--url` 模式另外 mask IPv4）。
+  - T3.0：测试噪音：upstream 的 "Validation issues" 日志行、1 个 StarletteDeprecationWarning、2 个 anyio ResourceWarning。
+  - T3.0：`store.py:128` / `bootstrap.py:475` 的裸 pymysql 连接没有 `SET wait_timeout`。它们在 finally 里关闭，只有 microVM 在操作中途被销毁才会残留。
+  - T3.1：角色已存在时不会重新应用信任策略，也不检查附加的托管策略（`35-runtime-role.sh:48-49`）。
+  - T3.1：`test-35-runtime-role.sh` 不隔离调用方导出的 `DORIS_SECRET_ARN`（`run_script` 可以用 `env -u`）。
+  - T3.1：shell 测试的缺口：
+    - 没有「dry-run + 角色已存在」的场景；
+    - 没有 create-role / put-role-policy 在 APPLY 时失败的场景；
+    - 其他账号的用例只断言 exit code；
+    - `policy_problems` 没有断言恰好 4 个 Sid。
+  - T3.1：`render-agentcore.py:45/76` 缺 `ACCOUNT_ID` 时提示含糊（:92 KeyError），应该加进 `missing`。
+  - T3.2：日志里单独用 trace-segment-destination ACTIVE 作证据较弱，真正的依据是 CLI 源码分析。
+  - T3.2：Step 8 的摘要没有提到代码 zip 的替换，也没有提到去掉了对 CDK 角色的 `DependsOn`。
+  - T3.2：`UPSTREAM.md:19` 可以说明 CLI 解析的是 `pyproject.toml`，不是 upstream 未锁定的 `requirements.txt`。
+  - T3.3：URL 会出现在未 mask 的错误输出里：
+    - `agentcore_client.py:62` 的 ValueError；
+    - `reconcile.py:216-218` 的 `_failed` 只 mask 密码 / 主机；
+    - `mcp_smoke.py:307` 的 list / call / flow / conns traceback。
+    - 这与 `mcp_smoke.py:15` 的 docstring 矛盾。
+  - T3.3：`audit_check` 的边界情况：
+    - `--calls` 文件有误时是 traceback + exit 1（:60）；
+    - `--repeat 0` 或负数会被接受（:45），结果是空洞通过；
+    - `{"events": 5}` 会抛 TypeError（:26）。
+  - T3.3：`test_one_read_only_call_per_server_tool` 对照的是写死的 12 个名字，不是 server 的实际注册表。
+  - T3.3：`--fresh` 的逐次耗时包含 session 关闭（DELETE 404），偏保守。
+  - T3.3：没有「`--region` 不带 `--sigv4`」的测试（`mcp_smoke.py:297`）。
+  - T3.3：`agentcore_client.py:8` 的 docstring 说每个请求重新读取凭证，实际在构造时解析一次。
+  - T3.3：`doris/test` 原有的噪音行 "Validation issues: … metrics.yaml"，来自格式错误 YAML 的测试。
+  - T3.4：日志「每一行反而快 2–3 s」逐行看不准确（实际 0.8–5.1 s，只对 p50 / max 成立）。
+  - T3.4：日志用「没有 SERVICE_NOT_READY」证明没有 session 复用；更强的证据是每次调用都 ≥ 5.3 s，而热调用约 0.7 s。
+  - T3.4：`infra/30-gateway.sh` 的 update-gateway 路径不传 `--description`（只有 :70 的 create 传），每次重跑后 description 都是 `None`。只影响控制台显示，T5.5 留意。
+  - T3.5：`admin_sql.py:71-82` 的检查不要求 DROP 在最后，所以 `CREATE X; DROP '%'; GRANT … TO X` 会被接受；单独调用 `render()` 时接受一条孤立的 DROP（只有 `main()` 会执行）。
+  - T3.5：`permission_matrix.py:373/399` 在 `--url` 模式下的错误输出不 mask Runtime URL，与 T3.3 那一条相同。
+  - T3.5：`permission_matrix.py:458` finally 里的 `conn.close()` 没有保护：`__aexit__` 的传输错误会打印原始 traceback（可能含 URL），并覆盖结果。
+  - T3.5（计划要求的写法）：`test_permission_matrix.py:584` 的 fixture 用了真实的 Doris 私网 IP；换成 TEST-NET 的 `198.51.100.x` 测试照样通过。
+  - T3.5：FE 审计日志一项在没有 `IDENTIFIED BY` 条数的情况下关闭了。它只证明当前 `fe.audit.log*` 里没有明文密码，没有证明 Doris 会 mask 这类语句。
+  - T3.5：日志里的只读调用清单漏了 Step 7 / 9 / 11 / 12 的 SigV4 InvokeAgentRuntime 调用。
+  - T3.5：`test_default_remote_connect_uses_the_sigv4_client` 把 `scripts/` 留在了 `sys.path` 上；`RuntimeCursor.execute` 在 :297 遇到非 dict 数据会 AttributeError（会被 `main` 的兜底捕获）。
+- 执行中控制方的 7 条裁定（详见各任务日志）：
+  - T3.0 Step 1 由控制方提交计划；
+  - GATE 协议沿用 P2：implementer 停在 GATE_PENDING，用户确认后由控制方执行一次 APPLY；
+  - T3.1 按 R-41 拒绝 secret ARN 通配，而计划代码用的是前缀 glob；
+  - T3.1 `RT_ROLE_ARN` 未校验：上调为 Important 并修复；
+  - T3.1 日志更正；
+  - T3.2 允许 implementer 自己执行 Step 11 的 `APPLY=1 bash infra/25-runtime-state.sh`（AWS 只读，只写 `state.env`）；
+  - T3.5 fixture 保持原样，即上面标注「计划要求的写法」的那一条。
+- 评审后在分支上跑全部离线测试：`doris/test` `Ran 151 tests` / `OK`，`scripts/test` `Ran 53 tests` / `OK`，`test_agentcore_*.py` `Ran 89 tests` / `OK`；6 组 shell 测试都是 `all passed`；upstream 离线测试 `🎉 All tests passed!`。
+- 提交前 `bash scripts/check-secrets.sh` → `check-secrets: OK (707 files scanned)`。没有创建或修改 AWS 资源，Doris 没有变更。
