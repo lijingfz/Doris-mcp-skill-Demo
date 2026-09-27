@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P3 执行中（分支 `p3-deploy`，Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。计划和 spec 修订（design v0.5、requirements v1.4）已在 T3.0 Step 1 提交（`9815838`）；**T3.0 完成**（M1–M4 `3ca8820`，补丁 P-09 `7115758`）；**T3.1 完成**（IAM 角色 `doris-mcp-runtime-role` 已建，GATE 由用户确认；`state.env` 有 `RT_ROLE_ARN`）；**T3.2 完成**（锁定传递依赖 `caio==0.12.5`、`platformdirs==4.11.15`，CodeZip 与 `.venv` 的 88 个 dist 一致；`agentcore deploy` 的 GATE 由用户确认，Runtime `dorismcp_dorismcp` 原地更新到 version 2，执行角色换成 `doris-mcp-runtime-role`，CDK 生成的执行角色已删除，`RUNTIME_ARN` 不变）。P0、P1、P2 已完成并本地合并到 `main`，P2 已推送到私有仓库（`787e680`）；`178be68`（D8 记录）尚未推送，用户要求等 P3 完成后一起推送
-- **进行中**：无（T3.2 的任务评审由控制方安排）
-- **下一步**：T3.3 [AI]：SigV4 直连 Runtime 冒烟（12 个工具 + flow）；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s；`reconcile.py mcp --url` 11/11；Doris 连接来源都在 `172.31.`。**注意**：Gateway target 仍缓存着 spike 的工具列表，T3.4 同步之前经 Gateway 看到的还是旧工具（Quick 在 P4 才接入，没有影响）。之后 T3.4 → T3.5；其余 2 个 GATE：T3.4 同步 Gateway target、T3.5 迁移 `mcp_svc` 的 host。P2 整体评审遗留事项的去向：M1–M4 已在 T3.0 完成；Runtime 角色 GetSecretValue 只限 `DORIS_SECRET_ARN` → T3.1 已完成（T3.2 deploy 后已生效）；host 迁移 → T3.5（更正见日志「P3 计划编写」）；FE audit log → T3.5 Step 14（用户侧）。P0 评审 M-4 → T3.3 / T3.4；M-1、M-3 在 T4.1、T4.4。**注意**：M4 之后 `check-secrets.sh` 读不到 secret 就是 `FAILED`（exit 1），每个收尾步骤都需要有效的 AWS 凭证（账号 `890717383483`）
+- **阶段**：P3 执行中（分支 `p3-deploy`，Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。计划和 spec 修订（design v0.5、requirements v1.4）已在 T3.0 Step 1 提交（`9815838`）；**T3.0 完成**（M1–M4 `3ca8820`，补丁 P-09 `7115758`）；**T3.1 完成**（IAM 角色 `doris-mcp-runtime-role` 已建，GATE 由用户确认；`state.env` 有 `RT_ROLE_ARN`）；**T3.2 完成**（锁定传递依赖 `caio==0.12.5`、`platformdirs==4.11.15`，CodeZip 与 `.venv` 的 88 个 dist 一致；`agentcore deploy` 的 GATE 由用户确认，Runtime `dorismcp_dorismcp` 原地更新到 version 2，执行角色换成 `doris-mcp-runtime-role`，CDK 生成的执行角色已删除，`RUNTIME_ARN` 不变）；**T3.3 完成**（离线部分 `a6b15a2`：SigV4 客户端、`mcp_smoke.py time` / `conns`、`audit_check.py`、`reconcile.py mcp --url`；SigV4 直连 Runtime 12 个工具、flow 6/6、共享 session 和每次新 session 各 12 个调用都在 60 s 内、审计记录 24/24、对账 11/11、Doris 连接来源都在 `172.31.`，只读，没有 GATE）。P0、P1、P2 已完成并本地合并到 `main`，P2 已推送到私有仓库（`787e680`）；`178be68`（D8 记录）尚未推送，用户要求等 P3 完成后一起推送
+- **进行中**：无（T3.3 的任务评审由控制方安排）
+- **下一步**：T3.4 [AI+GATE]：`SYNC=1 APPLY=1 bash infra/30-gateway.sh` 同步 Gateway target 的工具列表（GATE）；Gateway token 冒烟（`doris___*` 共 12 个）；经 Gateway 逐次测耗时（`mcp_smoke.py time --prefix doris___`）并跑 20 个并发（`--parallel 20`）；`conns --max-idle 610` 当时测一次、11 分钟后再测一次（P-09）；Gateway DEBUG 泄漏检查。**注意**：Gateway target 仍缓存着 spike 的工具列表，T3.4 同步之前经 Gateway 看到的还是旧工具（Quick 在 P4 才接入，没有影响）。之后 T3.5；其余 2 个 GATE：T3.4 同步 Gateway target、T3.5 迁移 `mcp_svc` 的 host。P2 整体评审遗留事项的去向：M1–M4 已在 T3.0 完成；Runtime 角色 GetSecretValue 只限 `DORIS_SECRET_ARN` → T3.1 已完成（T3.2 deploy 后已生效）；host 迁移 → T3.5（更正见日志「P3 计划编写」）；FE audit log → T3.5 Step 14（用户侧）。P0 评审 M-4 → T3.3 / T3.4；M-1、M-3 在 T4.1、T4.4。**注意**：M4 之后 `check-secrets.sh` 读不到 secret 就是 `FAILED`（exit 1），每个收尾步骤都需要有效的 AWS 凭证（账号 `890717383483`）
 - **spec 阶段的临时产物**：`/tmp/p3-stage`（detached worktree，`712e73e`，计划里全部代码的来源）和 `/tmp/p3-build/`（生成器与回放脚本）只在计划修改时需要；计划确认后可以 `git worktree remove --force /tmp/p3-stage`。它们在 `/tmp`，重启会丢，**权威版本是 `plans/P3-deploy.md` 里嵌入的代码**
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
@@ -408,3 +408,21 @@
 - 回滚（需 GATE）：`.venv/bin/python scripts/render-agentcore.py --phase spike`，然后再 deploy 一次；CDK 会重新生成执行角色，`doris-mcp-runtime-role` 保留不动。
 - 提交前 `bash scripts/check-secrets.sh` → `check-secrets: OK (700 files scanned)`。
 - Doris 无变更：`mcp_svc` 只经本机 MCP server 做了只读调用。除了 GATE 里的这一次 deploy（更新栈 `AgentCore-dorismcp-default`：Runtime 原地更新，删除 CDK 角色和策略），没有创建或修改其他 AWS 资源。没有 push。
+
+### 2026-09-27 T3.3 SigV4 直连 Runtime：冒烟、耗时、审计日志、对账
+- Step 1：分支 `p3-deploy`，工作区干净；`get-agent-runtime` = `READY	2`。
+- Step 3（红），与计划「期望」逐行一致：
+  - `scripts/test`：`Ran 32 tests`、`FAILED (errors=26)`，23 个名字：`test_agentcore_client`、`test_audit_check` 是 `ModuleNotFoundError`；其余 21 个是 `main()` 不接受 `client_factory`（20 个 TypeError）和缺 `parse_args` / `load_calls`（4 个 AttributeError）；
+  - `doris/test`：`Ran 130 tests`、`FAILED (errors=14)`，13 个名字。其中 13 个是 `TypeError`（`main()` 不接受 `remote_client_factory`）；`test_default_remote_client_is_the_sigv4_client` 先 `import agentcore_client`，所以是 `ModuleNotFoundError`，计划写的是「都是 TypeError」，计数相同。
+- Step 5（绿）：`scripts/test` `Ran 53 tests` / `OK`，`doris/test` `Ran 130 tests` / `OK`，`mcp-server` `test_agentcore_*` `Ran 89 tests` / `OK`；`check-secrets: OK (706 files scanned)`；`git status` 恰好 9 个文件（6 个 `??`、3 个 ` M`）。代码与计划逐字相同（从计划原文提取，`git apply` 两次 rc=0）。离线部分提交 `a6b15a2`。
+- Step 6（SigV4 直连，只读）：`list --expect 12` 输出 12 个工具（11 个 `[readOnly]` + `reload_semantic_layer`），`tools: 12`、exit 0；`flow: 6/6 passed`、exit 0（profile `returned_chars=9170`）。冷启动 `connected+initialized` = 6012 ms（list）/ 6026 ms（flow），P0 spike 是 5516 ms。关闭 session 时的 `Session termination failed: 404` 是预期的。
+- Step 7（逐次耗时，只读），没有 `SLOW` / `ERR`，两个 exit 0：
+  - 共享 session（`connected+initialized in 6060 ms`）：`time: 12 calls (1 parallel), 0 errors, 0 over 60000 ms; p50 670 ms, p95 2277 ms, max 2277 ms; wall 18013 ms`。最慢的是首个调用 `get_query_guide` 2277 ms 和 `list_metrics` 2116 ms（本机 11396 ms），`reload_semantic_layer` 926 ms（本机 7794 ms）；
+  - 每次新 session：`time: 12 calls (1 parallel, fresh session each), 0 errors, 0 over 60000 ms; p50 9111 ms, p95 12057 ms, max 12057 ms; wall 114988 ms`。最慢 3 个：`query_metric` 12057 ms、`list_dimensions_for_metric` 11656 ms、`reload_semantic_layer` 10288 ms；最快的 `execute_query` 也有 8020 ms（主要是新 microVM 的冷启动）。离 60 s 上限约 48 s 余量。
+- Step 9（CloudWatch，只读，只计数）：
+  - `audit_check.py --repeat 2`（Step 7 起）：`audit: 24 records (24 ok, 0 failed), 0 unreadable`，12 个工具每个 `2 ok 0 failed`，`[PASS] every expected call audited: 12/12 tools`，exit 0（第一次就通过，没有重跑）；
+  - Step 6 起的 1963 行日志：审计记录 `30`（> 24，另外 6 条来自 flow）；Traceback / ERROR / CRITICAL `0`；`mcp_svc` 密码命中 `0`；含 IPv4 字面量的行 `1360`（Doris 私网 IP 在 CloudWatch 里，已知，design §13）。日志内容没有打印。
+- Step 10（对账，只读）：指标经 Runtime（SigV4），参照 SQL 在本机用 `demo_ro` 执行：`published metrics: 22 match …/doris/semantic/ecom`、11 个 case 全部 `ok`、`11/11 cases match`、exit 0，行数与 P2 T2.6 相同。
+- Step 11（Doris 连接，只读）：`connections: 10 (Query 1, Sleep 9) from 3 distinct hosts; users mcp_svc; max idle 301 s`，即 N = 10、M = 3、S = 301 s；`[PASS] host prefix 172.31.: 10/10 connections`、`[PASS] idle connections <= 610 s: 0 over`、exit 0。N 远低于 50。这是 `mcp_svc` 第一次从 Runtime 登录 Doris，来源全部在 `172.31.` 下（T3.5 收紧 host）。
+- 所有在线输出都经 IP / URL sed，另存在 `.superpowers/sdd/P3-deploy/t33-step{6,7,9,10,11}.txt`（git 忽略）。
+- 提交前 `bash scripts/check-secrets.sh` → OK。没有创建或修改 AWS 资源（只有 get-agent-runtime、logs filter-log-events、secretsmanager get-secret-value 这些只读调用）；Doris 无变更（`mcp_svc` 只经 Runtime 做只读调用，`demo_ro` 只执行对账的 SELECT）。没有 push。
