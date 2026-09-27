@@ -4457,4 +4457,5 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - [x] `query_metric`（`mcp_svc`，经 MCP server）与故事线 SQL 11/11 到分一致；已发布的 22 个指标与本地模型一致（T2.6）
 - [x] P1 整体评审 ①–④ 和 P0 整体评审 M-2、M-8 已修；M-1、M-3、M-4 已记进 tasks.md 的 T4.1、T4.4、T3.4（T2.7）
 - [x] 测试：`doris/test` 119 个（T2.4 的评审修复新增 2 个）、4 组 shell 测试 + `test-lib.sh`、P1 的 `test_agentcore_*.py` 82 个（T2.7 新增 5 个）、upstream 离线测试，全部通过（T2.7 Step 8）
-- [x] P2 的提交里没有密码（T2.7 的 check-secrets 扫描了 `main..HEAD` 的全部补丁）和 Doris 主机地址（对 `git log -p 3c55f23..HEAD` 的计数扫描为 0）；仓库里只有 `prepare/` 的原始材料含主机地址，按规则不改；各任务的实测输出都经过 mask / 过滤（见各任务日志）；每个任务提交前 check-secrets（含块 1b）都是 OK（记在各任务的日志或报告里）
+- [x] P2 的提交里没有密码和 Doris 主机地址，各任务的实测输出都经过 mask / 过滤（见各任务日志）；证据见 progress.md 的 T2.7 条目：密码 —— T2.7 的 check-secrets 回溯扫描（块 1、1b、2）覆盖 `3c55f23..31542c3` 的全部补丁；主机地址 —— `git log -p 3c55f23..06c4ec2` 计数为 0，`06c4ec2` 的跟踪文件和整个 git 历史（`git log -p --all`）里只有 `b5114b2` 加入的 `prepare/` 原始材料含主机地址（10 处），按规则不改
+  提交前 check-secrets：T2.1、T2.7 的 OK 记在日志里，T2.4（含评审修复）、T2.5、T2.2、T2.3、T2.6 的 OK 记在日志的 T2.7 条目（来自各任务的报告）；`f2d6a60` 那次早于块 1b，由回溯扫描覆盖
