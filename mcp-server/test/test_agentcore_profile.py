@@ -221,6 +221,19 @@ class TestGetQueryProfile(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ExecTime", data["profile_text"])
         self.assertEqual(fe.paths(), [f"/rest/v2/manager/query/profile/text/{QID}"])
 
+    async def test_profile_text_is_masked_like_the_sql_preview(self):
+        # The profile repeats the whole SQL, which can span lines; list_recent_queries masks its preview.
+        text = PROFILE.replace("  - Task Type: QUERY",
+                               "  - Sql Statement: SELECT 1\nFROM t WHERE password = 'hunter2-pw'\n  - Task Type: QUERY")
+        cases = (("summary", "v2", FakeFe(v2=lambda qid: _ok({"profile": text}))),
+                 ("full", "api_text", FakeFe(api_text=lambda qid: httpx.Response(200, text=text))))
+        for mode, source, fe in cases:
+            with self.subTest(mode=mode):
+                data = _body(await get_query_profile(TARGET, QID, mode=mode, transport=fe.transport()))["data"]
+                self.assertEqual(data["source"], source)
+                self.assertIn("FROM t WHERE password = '****'", data["profile_text"])
+                self.assertNotIn("hunter2-pw", data["profile_text"])
+
     async def test_full_mode_returns_everything(self):
         fe = FakeFe(v2=lambda qid: _ok({"profile": PROFILE}))
         data = _body(await get_query_profile(TARGET, QID, mode="full", transport=fe.transport()))["data"]

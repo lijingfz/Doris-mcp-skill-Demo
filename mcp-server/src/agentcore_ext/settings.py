@@ -62,8 +62,8 @@ def _secrets_client(env: Mapping[str, str]) -> Any:
 def _credentials_from_secret(secret_id: str, client: Any) -> tuple[str, str]:
     try:
         raw = client.get_secret_value(SecretId=secret_id)["SecretString"]
-    except Exception as e:  # noqa: BLE001 - re-raised with context, never with the secret
-        raise SettingsError(f"cannot read secret {secret_id}: {type(e).__name__}") from e
+    except Exception as e:  # noqa: BLE001 - only the type: the message may carry request details
+        raise SettingsError(f"cannot read secret {secret_id}: {type(e).__name__}") from None
     try:
         doc = json.loads(raw)
         user, password = doc["username"], doc["password"]

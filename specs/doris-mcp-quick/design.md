@@ -1,6 +1,6 @@
 # Doris MCP on AgentCore × Amazon Quick 桌面版 —— 设计
 
-> 版本：**v0.4** · 2026-09-26 · 状态：P2 计划已写好（`plans/P2-doris.md`），等待 review；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
+> 版本：**v0.4** · 2026-09-26 · 状态：P2 已按 `plans/P2-doris.md` 在分支 `p2-doris` 实施完成（T2.1–T2.7），等待整体评审和用户决定合并方式；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
 > 输入材料：`prepare/` 下 4 份文件 + upstream `velodb-mcp-server`（锁定 commit `f235832`）+ 旧仓库 `velodb-mcp-agentcore`（复用流程与脚本）
 > 标注约定：✅ 已实测（本次对真实 Doris / AWS 账号只读验证）· 📄 官方文档确认 · ❓ 待 P0 验证
 

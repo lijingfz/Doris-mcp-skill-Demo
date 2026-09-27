@@ -108,6 +108,15 @@ class TestSettingsErrors(unittest.TestCase):
         client = FakeSecrets(error=TimeoutError(f"endpoint timeout, password={SECRET_PW}"))
         self.assertSettingsError(env, "cannot read secret doris-mcp/mcp_svc: TimeoutError", client)
 
+    def test_secret_read_failure_does_not_chain_the_original_error(self):
+        # A chained error prints its own message (here with the password) in any traceback.
+        env = {**BASE, "DORIS_SECRET_ID": "doris-mcp/mcp_svc"}
+        client = FakeSecrets(error=TimeoutError(f"endpoint timeout, password={SECRET_PW}"))
+        with self.assertRaises(SettingsError) as ctx:
+            load_settings(env, secrets_client=client)
+        self.assertIsNone(ctx.exception.__cause__)
+        self.assertTrue(ctx.exception.__suppress_context__)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

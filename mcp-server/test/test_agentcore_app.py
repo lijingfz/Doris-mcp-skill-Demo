@@ -1,5 +1,6 @@
 """P-01: AgentCore HTTP contract - GET /ping, stateless streamable HTTP on /mcp, stderr logging, main()."""
 
+import contextlib
 import json
 import logging
 import os
@@ -69,6 +70,15 @@ class TestHttpContract(_AppCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(listed["result"]["tools"]), 12)
 
+    def test_non_default_ports_reach_the_cluster_config_and_the_fe_url(self):
+        env = {**self.env, "DORIS_PORT": "19030", "DORIS_HTTP_PORT": "18030"}
+        with patch.object(app_mod, "create_server", wraps=app_mod.create_server) as create, \
+                patch.object(app_mod, "register_profile_tools") as register:
+            app_mod.build_server(load_settings(env))
+        cluster = create.call_args.kwargs["config"].cluster
+        self.assertEqual((cluster.fe_host, cluster.fe_mysql_port, cluster.fe_http_port), ("10.9.8.7", 19030, 18030))
+        self.assertEqual(register.call_args.args[1].base_url, "http://10.9.8.7:18030")
+
     def test_sse_responses_declare_utf8(self):
         # Without CharsetMiddleware the header is a bare text/event-stream and
         # clients decode Chinese result text as ISO-8859-1.
@@ -102,6 +112,31 @@ class TestMain(_AppCase):
         self.assertIn("DORIS_PORT must be an integer", logs.output[0])
         self.assertNotIn("svc-pw", "\n".join(logs.output))
         run.assert_not_called()
+
+    def _main_exit(self, env, build_error=None):
+        build = patch.object(app_mod, "build_server", side_effect=build_error) if build_error else contextlib.nullcontext()
+        with patch.dict(os.environ, env, clear=True), \
+                patch.object(app_mod, "configure_logging"), build, \
+                patch.object(FastMCP, "run") as run, \
+                self.assertLogs("doris_new_mcp.agentcore", "ERROR") as logs, \
+                self.assertRaises(SystemExit) as exit_:
+            app_mod.main()
+        run.assert_not_called()
+        return exit_.exception.code, logs.output
+
+    def test_build_errors_exit_2_with_one_line(self):
+        # e.g. a workspace dir that cannot be created; no traceback, same exit code as bad settings.
+        with tempfile.NamedTemporaryFile() as not_a_dir:
+            code, output = self._main_exit({**self.env, "DORIS_MCP_WORKSPACE_DIR": f"{not_a_dir.name}/ws"})
+        self.assertEqual(code, 2)
+        self.assertEqual(len(output), 1)
+        self.assertIn("Cannot build the MCP server: NotADirectoryError", output[0])
+
+    def test_build_error_messages_are_masked(self):
+        code, output = self._main_exit(self.env, RuntimeError("pool init failed: password=svc-pw"))
+        self.assertEqual(code, 2)
+        self.assertIn("RuntimeError: pool init failed: password=****", output[0])
+        self.assertNotIn("svc-pw", "\n".join(output))
 
 
 class TestConfigureLogging(unittest.TestCase):

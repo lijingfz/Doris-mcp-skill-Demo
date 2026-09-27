@@ -4451,10 +4451,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ## P2 完成标准（对照 design §11 P2 行）
 
-- [ ] Secrets Manager `doris-mcp/mcp_svc` 存在（32 位字母数字密码），`infra/state.env` 有 `DORIS_SECRET_ARN`；`scripts/check-secrets.sh` 能读到它并做精确值扫描（T2.1）
-- [ ] `ecom` 已发布到 `system_mcp`：`semantic_version=2`、10 个 active 文件；没有执行任何 GRANT（T2.5，T2.3 复核）
-- [ ] `mcp_svc` 的 `SHOW GRANTS` 恰好是 R-42 + Doris 默认项；upstream store 初始化通过；9 个写探针全部被 Doris 拒绝（T2.3，14/14）
-- [ ] `query_metric`（`mcp_svc`，经 MCP server）与故事线 SQL 11/11 到分一致；已发布的 22 个指标与本地模型一致（T2.6）
-- [ ] P1 整体评审 ①–④ 和 P0 整体评审 M-2、M-8 已修；M-1、M-3、M-4 已记进 tasks.md 的 T4.1、T4.4、T3.4（T2.7）
-- [ ] 测试：`doris/test` 117 个、4 组 shell 测试 + `test-lib.sh`、P1 的 `test_agentcore_*.py` 82 个（T2.7 新增 5 个）、upstream 离线测试，全部通过（T2.7 Step 8）
-- [ ] 密码和 Doris 主机地址没有出现在任何输出、日志和提交里；每次提交前 check-secrets（含块 1b）都是 OK
+- [x] Secrets Manager `doris-mcp/mcp_svc` 存在（32 位字母数字密码），`infra/state.env` 有 `DORIS_SECRET_ARN`；`scripts/check-secrets.sh` 能读到它并做精确值扫描（T2.1）
+- [x] `ecom` 已发布到 `system_mcp`：`semantic_version=2`、10 个 active 文件；没有执行任何 GRANT（T2.5，T2.3 复核）
+- [x] `mcp_svc` 的 `SHOW GRANTS` 恰好是 R-42 + Doris 默认项；upstream store 初始化通过；9 个写探针全部被 Doris 拒绝（T2.3，14/14）
+- [x] `query_metric`（`mcp_svc`，经 MCP server）与故事线 SQL 11/11 到分一致；已发布的 22 个指标与本地模型一致（T2.6）
+- [x] P1 整体评审 ①–④ 和 P0 整体评审 M-2、M-8 已修；M-1、M-3、M-4 已记进 tasks.md 的 T4.1、T4.4、T3.4（T2.7）
+- [x] 测试：`doris/test` 119 个（T2.4 的评审修复新增 2 个）、4 组 shell 测试 + `test-lib.sh`、P1 的 `test_agentcore_*.py` 82 个（T2.7 新增 5 个）、upstream 离线测试，全部通过（T2.7 Step 8）
+- [x] 密码和 Doris 主机地址没有出现在任何输出、日志和提交里；每次提交前 check-secrets（含块 1b）都是 OK

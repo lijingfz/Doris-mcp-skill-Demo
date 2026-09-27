@@ -15,6 +15,7 @@ from starlette.responses import JSONResponse
 from agentcore_ext.settings import Settings, SettingsError, load_settings
 from config.loader import AppConfig
 from core.charset import CharsetMiddleware
+from core.sensitive_mask import mask_sensitive
 from server import create_server
 from tools.profile import FeHttpTarget, register_profile_tools
 
@@ -81,7 +82,11 @@ def main() -> None:
     except SettingsError as e:
         logger.error("Invalid configuration: %s", e)
         sys.exit(2)
-    mcp = build_server(settings)
+    try:
+        mcp = build_server(settings)
+    except Exception as e:  # noqa: BLE001 - one masked line and exit 2, like bad settings
+        logger.error("Cannot build the MCP server: %s: %s", type(e).__name__, mask_sensitive(str(e)))
+        sys.exit(2)
     logger.info(
         "Doris MCP for AgentCore: Doris %s:%d (http %d) as %s, profile scope %s, workspace %s",
         settings.doris_host, settings.doris_port, settings.doris_http_port,

@@ -298,6 +298,8 @@ async def get_query_profile(
             {"hint": _NOT_FOUND_HINT, "evidence": evidence},
         )
 
+    # The profile repeats the whole SQL (possibly over several lines); mask it like the list preview.
+    text = mask_sensitive(text)
     shown = summarize_profile(text) if mode == "summary" else text
     truncated = len(shown) > max_chars
     if truncated:

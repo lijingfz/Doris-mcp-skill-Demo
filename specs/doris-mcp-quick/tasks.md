@@ -50,7 +50,7 @@
 | [x] | T2.4 | [AI] | `doris/semantic/ecom/*.yaml`（10 个文件、22 个指标、time spine `dim_date`）+ `doris/reconcile.py`（11 个故事线对账用例）；`demo_ro` 只读跑 `direct` 模式 11/11 | R-26 | P2 §T2.4 |
 | [x] | T2.5 | [AI+GATE] | `doris/publish_semantic.py` + `doris/publish-semantic.sh`（方案 C）：root 在本机进程内调用 upstream `DorisStore` 发布（离线校验 bootstrap + MetricFlow 引擎 + 重名，物理表校验，staging → commit → 回读比对）；不起 Web UI，不执行 upstream `commit_staging` 的 `GRANT … TO '%'` | R-26 | P2 §T2.5 |
 | [x] | T2.6 | [AI] | `reconcile.py mcp`：以 `mcp_svc` 在进程内起 MCP server，`list_metrics`（22 个与本地一致）+ `query_metric` 与故事线 SQL 11/11 到分一致；全部离线测试 | R-26 | P2 §T2.6 |
-| [ ] | T2.7 | [AI] | P1 整体评审 ①–④：`get_query_profile` 的 profile 文本经 `mask_sensitive`；读 secret 失败时不链接原异常（`from None`）；`main()` 捕获 `build_server` 的异常（exit 2 + 一行 mask 后的日志）；非默认端口传到 `cfg.cluster` 和 FE URL 的测试。P0 整体评审 M-2（`quick/T0.7-guide.md` 取 secret 的命令改成单行）、M-8（根 `.gitignore` 的 staging 注释）| R-30, R-31, R-32（评审项）| P2 §T2.7 |
+| [x] | T2.7 | [AI] | P1 整体评审 ①–④：`get_query_profile` 的 profile 文本经 `mask_sensitive`；读 secret 失败时不链接原异常（`from None`）；`main()` 捕获 `build_server` 的异常（exit 2 + 一行 mask 后的日志）；非默认端口传到 `cfg.cluster` 和 FE URL 的测试。P0 整体评审 M-2（`quick/T0.7-guide.md` 取 secret 的命令改成单行）、M-8（根 `.gitignore` 的 staging 注释）| R-30, R-31, R-32（评审项）| P2 §T2.7 |
 
 ## P3 AgentCore 部署（计划：`plans/P3-deploy.md`）
 

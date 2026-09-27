@@ -20,7 +20,8 @@ workspace/
 *.log
 
 # agentcore / cdk / node
-# CodeZip staging: the CLI installs deps into <codeLocation>/agentcore/<runtime>/staging (~107 MB)
+# CodeZip staging lands in dorismcp/agentcore/.cache/<runtime>/staging (~107 MB), ignored there by .cache/*.
+# The two entries below only guard against CLI output inside a codeLocation.
 spike/p0-mcp/agentcore/
 mcp-server/agentcore/
 node_modules/
