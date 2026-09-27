@@ -24,6 +24,11 @@ CREATE USER IF NOT EXISTS 'mcp_svc'@'%' IDENTIFIED BY '${MCP_SVC_PASSWORD}';
 ALTER USER 'mcp_svc'@'%' IDENTIFIED BY '${MCP_SVC_PASSWORD}';
 GRANT SELECT_PRIV ON internal.ecom.* TO 'mcp_svc'@'%';
 """
+# P3 / T3.5 host migration: the new identity first, then drop the old one.
+MIGRATE_SQL = """CREATE USER IF NOT EXISTS 'mcp_svc'@'172.31.%' IDENTIFIED BY '${MCP_SVC_PASSWORD}';
+GRANT SELECT_PRIV ON internal.ecom.* TO 'mcp_svc'@'172.31.%';
+DROP USER IF EXISTS 'mcp_svc'@'%';
+"""
 
 
 class FakeCursor:
@@ -92,7 +97,7 @@ class Render(unittest.TestCase):
             admin_sql.render(["ALTER USER 'x'@'%' IDENTIFIED BY '${OTHER}'"], {"MCP_SVC_PASSWORD": PW})
 
     def test_statement_outside_the_allowlist_is_rejected(self):
-        for stmt in ("DROP USER 'mcp_svc'@'%'", "SET GLOBAL enable_profile = true", "SELECT 1",
+        for stmt in ("DROP USER 'mcp_svc'@'%'", "DROP USER IF EXISTS 'mcp_svc'@'%', 'x'@'%'", "SET GLOBAL enable_profile = true", "SELECT 1",
                      "GRANT ADMIN_PRIV ON *.*.* TO 'mcp_svc'@'%'", "GRANT SELECT_PRIV ON *.*.* TO 'mcp_svc'@'%'"):
             with self.subTest(stmt=stmt), self.assertRaises(admin_sql.AdminSqlError):
                 admin_sql.render([stmt], {})
@@ -158,6 +163,46 @@ class Main(unittest.TestCase):
         rc, output, conn = run(env=env, apply=True)
         self.assertEqual(rc, 2)
         self.assertIn("DORIS_ADMIN_PASSWORD", output)
+        self.assertEqual(conn.executed, [])
+
+
+class DropUser(unittest.TestCase):
+    """DROP USER IF EXISTS retires an old identity of the secret's user (P3 / T3.5), nothing else."""
+
+    def test_dry_run_shows_the_drop(self):
+        rc, output, conn = run(sql=MIGRATE_SQL)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("DRY-RUN SQL: DROP USER IF EXISTS 'mcp_svc'@'%'", output)
+        self.assertIn("DRY-RUN: 3 statements", output)
+        self.assertEqual(conn.executed, [])
+
+    def test_apply_drops_after_the_new_identity_and_shows_only_its_grants(self):
+        rc, output, conn = run(sql=MIGRATE_SQL, apply=True)
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(conn.executed[2:], ["DROP USER IF EXISTS 'mcp_svc'@'%'", "SHOW GRANTS FOR 'mcp_svc'@'172.31.%'"])
+        self.assertIn("ok: DROP USER IF EXISTS 'mcp_svc'@'%'", output)
+
+    def test_drop_before_any_other_identity_is_created_is_refused(self):
+        sql = "DROP USER IF EXISTS 'mcp_svc'@'%';\n" + MIGRATE_SQL.replace("DROP USER IF EXISTS 'mcp_svc'@'%';\n", "")
+        rc, output, conn = run(sql=sql, apply=True)
+        self.assertEqual(rc, 2)
+        self.assertIn("must follow a CREATE USER of another mcp_svc identity", output)
+        self.assertEqual(conn.executed, [])
+
+    def test_dropping_an_identity_the_script_also_sets_up_is_refused(self):
+        for extra in ("GRANT SELECT_PRIV ON internal.ecom.* TO 'mcp_svc'@'%';",
+                      "ALTER USER 'mcp_svc'@'%' IDENTIFIED BY '${MCP_SVC_PASSWORD}';",
+                      "DROP USER IF EXISTS 'mcp_svc'@'172.31.%';"):
+            with self.subTest(extra=extra):
+                rc, output, conn = run(sql=MIGRATE_SQL + extra + "\n", apply=True)
+                self.assertEqual(rc, 2)
+                self.assertIn("also creates or grants", output)
+                self.assertEqual(conn.executed, [])
+
+    def test_dropping_another_user_is_refused(self):
+        rc, output, conn = run(sql=MIGRATE_SQL + "DROP USER IF EXISTS 'demo_ro'@'%';\n", apply=True)
+        self.assertEqual(rc, 2)
+        self.assertIn("'demo_ro'", output)
         self.assertEqual(conn.executed, [])
 
 

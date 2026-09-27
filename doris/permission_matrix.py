@@ -2,9 +2,15 @@
 
     python doris/permission_matrix.py [--workspace ecom]           # read-only checks + the probe list
     APPLY=1 python doris/permission_matrix.py [--workspace ecom]   # GATE: also run the probes
+    python doris/permission_matrix.py --url "$RUNTIME_URL" --expect-host '172.31.%'   # P3: through the Runtime
 
 Connection: agentcore_ext.settings.load_settings(os.environ) -- DORIS_HOST, DORIS_PORT and
 DORIS_SECRET_ID=doris-mcp/mcp_svc (or DORIS_USER/DORIS_PASSWORD).
+With --url the read-only checks go through the deployed Runtime's execute_query tool over SigV4
+(AWS_* credentials; scripts/agentcore_client.py), i.e. as mcp_svc from the VPC: after P3 / T3.5 that
+is the only place the account can log in from. The probes need a direct connection (APPLY=1 refuses
+--url); IPv4 addresses in the output are masked as <ip>. --expect-host H adds a check that the
+connected identity is exactly 'mcp_svc'@'H'.
 Read-only checks: SHOW GRANTS equals EXPECTED_GRANTS exactly (R-42), SHOW DATABASES equals
 EXPECTED_DATABASES, every physical table of the models is readable, the workspace has a metadata
 row (else upstream would INSERT it, which needs LOAD_PRIV) and active files.
@@ -18,7 +24,10 @@ Exit 0 when every check passes, 1 when one fails, 2 on usage/configuration error
 from __future__ import annotations
 
 import argparse
+import ast
+import asyncio
 import dataclasses
+import json
 import logging
 import os
 import re
@@ -53,6 +62,8 @@ EXPECTED_DATABASES = frozenset({"ecom", "system_mcp", "information_schema", "mys
 DENIED_ERRNOS = frozenset({1044, 1142, 1143, 1227})
 DENIED_1105 = ("access denied", "command denied")  # Doris 4.1 refuses privileges with errno 1105 (T2.3)
 _WORKSPACE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")  # upstream workspace/create rule
+_LITERAL_RE = re.compile(r"^[A-Za-z0-9_]+$")  # what RuntimeCursor inlines without quoting rules
+_IPV4_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
 _STORE_LOGGER = "doris_new_mcp.store"
 
 
@@ -127,7 +138,10 @@ def classify_error(error: pymysql.MySQLError) -> str:
     return "error"
 
 
-def _brief(error: pymysql.MySQLError, secrets: Iterable[str]) -> str:
+Secrets = Iterable["str | re.Pattern[str]"]  # literal values -> ***, patterns (IPv4) -> <ip>
+
+
+def _brief(error: pymysql.MySQLError, secrets: Secrets) -> str:
     """errno + message, masked before it is cut (a cut secret no longer matches the mask)."""
     errno = error.args[0] if error.args else "?"
     message = str(error.args[1]) if len(error.args) > 1 else str(error)
@@ -156,7 +170,7 @@ def check_databases(cur: Any) -> Result:
     return Result(not problems, "databases", "; ".join(problems) or ", ".join(sorted(seen)))
 
 
-def check_select(cur: Any, tables: Sequence[str], secrets: Iterable[str]) -> Result:
+def check_select(cur: Any, tables: Sequence[str], secrets: Secrets) -> Result:
     failed = []
     for table in tables:
         try:
@@ -179,7 +193,7 @@ def check_semantic_store(cur: Any, workspace: str) -> Result:
                   f"workspace {workspace} semantic_version={rows[0]['semantic_version']}, {files} active files")
 
 
-def max_user_connections(cur: Any, secrets: Iterable[str]) -> str:
+def max_user_connections(cur: Any, secrets: Secrets) -> str:
     try:
         props = {r["Key"]: r["Value"] for r in _rows(cur, "SHOW PROPERTY")}
     except pymysql.MySQLError as e:
@@ -187,7 +201,7 @@ def max_user_connections(cur: Any, secrets: Iterable[str]) -> str:
     return props.get("max_user_connections", "?")
 
 
-def run_probe(cur: Any, probe: Probe, secrets: Iterable[str]) -> Result:
+def run_probe(cur: Any, probe: Probe, secrets: Secrets) -> Result:
     name = f"probe {probe.name}"
     try:
         _rows(cur, probe.sql)
@@ -229,42 +243,160 @@ def upstream_store_init(settings: Settings, workspace: str) -> tuple[bool, str]:
         clear_service_credentials()
 
 
-def _mask(text: str, secrets: Iterable[str]) -> str:
+def _mask(text: str, secrets: Secrets) -> str:
     for s in secrets:
-        if s:
+        if isinstance(s, re.Pattern):
+            text = s.sub("<ip>", text)
+        elif s:
             text = text.replace(s, MASK)
     return text
 
 
+def _inline(sql: str, params: Sequence[Any] | None) -> str:
+    """Fill %s with quoted literals; only plain identifiers (the workspace name) are accepted."""
+    if not params:
+        return sql
+    parts = sql.split("%s")
+    if len(parts) != len(params) + 1:
+        raise ValueError(f"{len(parts) - 1} placeholders for {len(params)} parameters")
+    for value in params:
+        if not (isinstance(value, str) and _LITERAL_RE.match(value)):
+            raise ValueError("RuntimeCursor only inlines letters, digits and '_'")
+    return parts[0] + "".join(f"'{value}'{rest}" for value, rest in zip(params, parts[1:]))
+
+
+def _tool_error(body: Mapping[str, Any]) -> pymysql.MySQLError:
+    """execute_query's error reply as a pymysql error; upstream puts str(pymysql error) in the message."""
+    error = body.get("error") if isinstance(body.get("error"), dict) else {}
+    code, message = str(error.get("code") or "ERROR"), str(error.get("message") or "")
+    try:
+        parsed = ast.literal_eval(message)  # "(1105, 'errCode = 2, ...')"
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+        parsed = None
+    if isinstance(parsed, tuple) and len(parsed) == 2 and isinstance(parsed[0], int):
+        return pymysql.err.OperationalError(parsed[0], str(parsed[1]))
+    return pymysql.err.OperationalError(0, f"{code}: {message}" if message else code)
+
+
+class RuntimeCursor:
+    """The cursor subset the read-only checks use, over the Runtime's execute_query tool."""
+
+    def __init__(self, run_sql: Callable[[str], Mapping[str, Any]]) -> None:
+        self._run_sql, self._rows = run_sql, []
+
+    def __enter__(self) -> RuntimeCursor:
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+    def execute(self, sql: str, params: Sequence[Any] | None = None) -> None:
+        body = self._run_sql(_inline(sql, params))
+        if body.get("success") is not True:
+            raise _tool_error(body)
+        rows = (body.get("data") or {}).get("rows")
+        if not isinstance(rows, list):
+            raise pymysql.err.OperationalError(0, "no rows in the execute_query reply")
+        self._rows = rows
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self._rows
+
+
+class RuntimeConnection:
+    """pymysql-like connection for --url: one MCP session (one Runtime microVM) for the whole run.
+
+    fastmcp keeps the session in its own task, so it stays open between the synchronous calls.
+    """
+
+    def __init__(self, client: Any, tool: str = "execute_query") -> None:
+        self._client, self._tool = client, tool
+        self._runner = asyncio.Runner()
+        try:
+            self._runner.run(client.__aenter__())
+        except BaseException:
+            self._runner.close()
+            raise
+
+    def run_sql(self, sql: str) -> dict[str, Any]:
+        result = self._runner.run(self._client.call_tool(self._tool, {"sql": sql}, raise_on_error=False))
+        try:
+            body = json.loads("".join(getattr(c, "text", "") for c in result.content))
+        except ValueError:
+            body = None
+        return body if isinstance(body, dict) else {"success": False, "error": {"code": "NOT_JSON"}}
+
+    def cursor(self) -> RuntimeCursor:
+        return RuntimeCursor(self.run_sql)
+
+    def close(self) -> None:
+        try:
+            self._runner.run(self._client.__aexit__(None, None, None))
+        finally:
+            self._runner.close()
+
+
+def _runtime_connection(url: str, region: str | None) -> RuntimeConnection:
+    """SigV4 MCP session to a Runtime invoke URL (inbound auth AWS_IAM), see scripts/agentcore_client.py."""
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import agentcore_client
+    return RuntimeConnection(agentcore_client.sigv4_client(url, region))
+
+
 def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None,
          connect: Callable[..., Any] = pymysql.connect, out: TextIO = sys.stdout, err: TextIO = sys.stderr,
-         store_init: Callable[[Settings, str], tuple[bool, str]] = upstream_store_init) -> int:
+         store_init: Callable[[Settings, str], tuple[bool, str]] = upstream_store_init,
+         remote_connect: Callable[[str, str | None], Any] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check the Doris privileges of mcp_svc.")
     parser.add_argument("--models", type=Path, default=MODELS_DIR, help="semantic YAML directory (tables)")
     parser.add_argument("--workspace", default="ecom", help="semantic workspace")
+    parser.add_argument("--url", help="deployed Runtime invoke URL: read-only checks through its execute_query")
+    parser.add_argument("--region", help="region of --url (default: from the URL)")
+    parser.add_argument("--expect-host", help="the identity must be 'mcp_svc'@'HOST' (P3 / T3.5: 172.31.%%)")
     args = parser.parse_args(argv)
     env = os.environ if env is None else env
 
     if not _WORKSPACE_RE.match(args.workspace):
         print(f"ERROR: workspace must match {_WORKSPACE_RE.pattern}", file=err)
         return 2
-    try:
-        settings = load_settings(env)
-    except SettingsError as e:
-        print(f"ERROR: {e}", file=err)
+    if args.region and not args.url:
+        print("ERROR: --region only applies with --url", file=err)
         return 2
+    if args.url and env.get("APPLY") == "1":
+        print("ERROR: APPLY=1 needs a direct connection: the probes cannot go through the Runtime's "
+              "read-only execute_query (drop --url)", file=err)
+        return 2
+    settings: Settings | None = None
+    if args.url:
+        secrets: list[str | re.Pattern[str]] = [env.get("DORIS_HOST", ""), _IPV4_RE]
+    else:
+        try:
+            settings = load_settings(env)
+        except SettingsError as e:
+            print(f"ERROR: {e}", file=err)
+            return 2
+        secrets = [settings.doris_password, settings.doris_host]
     tables = sorted(collect_physical_tables(args.models))
-    secrets = [settings.doris_password, settings.doris_host]
 
     def emit(text: str, stream: TextIO = out) -> None:
         print(_mask(text, secrets), file=stream)
 
     try:
-        conn = connect(host=settings.doris_host, port=settings.doris_port, user=settings.doris_user,
-                       password=settings.doris_password, connect_timeout=10, read_timeout=60,
-                       autocommit=True, cursorclass=pymysql.cursors.DictCursor)
+        if args.url:
+            conn = (remote_connect or _runtime_connection)(args.url, args.region)
+        else:
+            conn = connect(host=settings.doris_host, port=settings.doris_port, user=settings.doris_user,
+                           password=settings.doris_password, connect_timeout=10, read_timeout=60,
+                           autocommit=True, cursorclass=pymysql.cursors.DictCursor)
     except pymysql.MySQLError as e:
         emit(f"FAILED: connect: {e}", err)
+        return 1
+    except Exception as e:  # noqa: BLE001 - --url: HTTP, SigV4 or MCP initialize failed
+        if not args.url:
+            raise
+        emit(f"FAILED: connect: {type(e).__name__}: {e}", err)
         return 1
     results: list[Result] = []
     try:
@@ -273,7 +405,12 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
             if not identity.startswith(f"'{EXPECTED_USER}'@"):
                 emit(f"ERROR: this checks {EXPECTED_USER}; connected as {identity}", err)
                 return 2
-            emit(f"connected as {identity}")
+            emit(f"connected as {identity}" + (" (through the Runtime)" if args.url else ""))
+            if args.expect_host is not None:
+                want = f"'{EXPECTED_USER}'@'{args.expect_host}'"
+                results.append(Result(identity == want, "identity",
+                                      identity if identity == want else f"connected as {identity}, expected {want}"))
+                emit(_line(results[-1]))
             checks: list[tuple[str, Callable[[Any], Result]]] = [
                 ("grants", check_grants), ("databases", check_databases),
                 ("select", lambda c: check_select(c, tables, secrets)),
@@ -288,7 +425,10 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
             failed = sum(not r.ok for r in results)
 
             probes = write_probes(identity)
-            if env.get("APPLY") != "1":
+            if args.url:
+                emit("probes: not run with --url (execute_query takes read-only SQL only; they need a "
+                     "direct connection)")
+            elif env.get("APPLY") != "1":
                 emit("DRY-RUN probes (APPLY=1 to run; each write is a no-op if it were allowed):")
                 emit(f"  store_init         expect ok      upstream DorisStore('{args.workspace}') as {EXPECTED_USER}: "
                      "CREATE DATABASE/TABLE IF NOT EXISTS + metadata SELECT")

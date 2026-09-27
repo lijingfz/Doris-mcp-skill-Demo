@@ -10,6 +10,7 @@ probes only after the GATE.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import re
 import sys
@@ -27,6 +28,8 @@ import permission_matrix  # noqa: E402
 from agentcore_ext.settings import load_settings  # noqa: E402
 from permission_matrix import classify_error, grant_problems, parse_grants, write_probes  # noqa: E402
 from store.bootstrap import collect_physical_tables  # noqa: E402
+
+from fastmcp import Client, FastMCP  # noqa: E402
 
 MODELS = ROOT / "doris" / "semantic" / "ecom"
 PASSWORD = "SvcPw0123456789abcXYZ"
@@ -485,6 +488,156 @@ class UpstreamStoreInit(unittest.TestCase):
             with self.assertRaises(pymysql.MySQLError):
                 permission_matrix.upstream_store_init(self.settings, "ecom")
         self.mocks["clear_service_credentials"].assert_called_once_with()
+
+
+RUNTIME_URL = "https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn/invocations?qualifier=DEFAULT"
+VPC_IDENTITY = "'mcp_svc'@'172.31.%'"
+
+
+def runtime_server(doris: FakeDoris) -> FastMCP:
+    """The deployed server's execute_query, answering from a FakeDoris the way upstream tools/query.py does."""
+    mcp = FastMCP("fake-runtime")
+
+    @mcp.tool
+    async def execute_query(sql: str, database: str = "", max_rows: int = 0) -> str:
+        cur = doris.cursor()
+        try:
+            cur.execute(sql)
+        except pymysql.MySQLError as e:  # upstream: error_response(CONNECTION_ERROR, str(e))
+            return json.dumps({"success": False, "error": {"code": "CONNECTION_ERROR", "message": str(e)}})
+        return json.dumps({"success": True, "data": {"columns": [], "rows": cur.fetchall()}}, default=str)
+
+    return mcp
+
+
+class RemoteRuntime(unittest.TestCase):
+    """--url: the read-only checks through the deployed Runtime, as mcp_svc from the VPC (P3 / T3.5)."""
+
+    def run_remote(self, argv=(), doris=None, apply=False, remote_error=None):
+        doris = doris or FakeDoris({"SELECT CURRENT_USER()": [{"identity": VPC_IDENTITY}]})
+        remote_calls = []
+
+        def remote_connect(url, region):
+            remote_calls.append((url, region))
+            if remote_error:
+                raise remote_error
+            return permission_matrix.RuntimeConnection(Client(runtime_server(doris)))
+
+        def no_direct_connect(**kwargs):
+            raise AssertionError("--url must not connect to Doris directly")
+
+        out, err = io.StringIO(), io.StringIO()
+        env = {"APPLY": "1"} if apply else {}  # no DORIS_* at all: the Runtime has its own settings
+        rc = permission_matrix.main(["--url", RUNTIME_URL, *argv], env=env, connect=no_direct_connect, out=out,
+                                    err=err, remote_connect=remote_connect)
+        return rc, out.getvalue(), err.getvalue(), doris, remote_calls
+
+    def test_read_only_checks_run_through_the_runtime(self):
+        rc, out, err, doris, remote_calls = self.run_remote(["--expect-host", "172.31.%"])
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(remote_calls, [(RUNTIME_URL, None)])
+        self.assertEqual({s.split()[0] for s in doris.executed}, {"SELECT", "SHOW"})
+        for line in (f"connected as {VPC_IDENTITY} (through the Runtime)", f"ok    identity: {VPC_IDENTITY}",
+                     "ok    grants", "ok    databases", "ok    select: 9 physical tables", "ok    semantic store",
+                     "info  max_user_connections=100", "5/5 checks pass"):
+            self.assertIn(line, out)
+
+    def test_params_are_inlined_as_literals(self):
+        _, _, _, doris, _ = self.run_remote()
+        self.assertIn("SELECT semantic_version FROM system_mcp.workspace_metadata WHERE workspace = 'ecom'",
+                      doris.executed)
+
+    def test_the_old_identity_fails_the_host_check(self):
+        doris = FakeDoris()  # still 'mcp_svc'@'%'
+        rc, out, _, _, _ = self.run_remote(["--expect-host", "172.31.%"], doris=doris)
+        self.assertEqual(rc, 1)
+        self.assertIn(f"FAIL  identity: connected as {IDENTITY}, expected {VPC_IDENTITY}", out)
+
+    def test_doris_errors_keep_their_errno_and_ips_are_masked(self):
+        doris = FakeDoris({"SELECT CURRENT_USER()": [{"identity": VPC_IDENTITY}],
+                           "SELECT 1 FROM internal.ecom.fact_refund": denied("SELECT")})
+        rc, out, err, _, _ = self.run_remote(doris=doris)
+        self.assertEqual(rc, 1)
+        self.assertRegex(out, r"FAIL  select: internal\.ecom\.fact_refund: 1105 SELECT command denied to user 'mcp_svc'@'<ip>'")
+        self.assertNotIn("10.0.0.9", out + err)
+
+    def test_dry_run_lists_no_probes(self):
+        rc, out, _, _, _ = self.run_remote()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("probes: not run with --url", out)
+        self.assertNotIn("DRY-RUN probes", out)
+
+    def test_apply_with_url_is_a_usage_error(self):
+        rc, _, err, doris, remote_calls = self.run_remote(apply=True)
+        self.assertEqual(rc, 2)
+        self.assertIn("APPLY=1", err)
+        self.assertEqual((doris.executed, remote_calls), ([], []))
+
+    def test_region_is_passed_and_needs_url(self):
+        _, _, _, _, remote_calls = self.run_remote(["--region", "us-east-1"])
+        self.assertEqual(remote_calls, [(RUNTIME_URL, "us-east-1")])
+        rc, _, err, _, _ = run_main(["--region", "us-east-1"])
+        self.assertEqual(rc, 2)
+        self.assertIn("--region only applies with --url", err)
+
+    def test_a_session_failure_is_one_masked_line(self):
+        rc, out, err, _, _ = self.run_remote(remote_error=ConnectionError("connect to 172.31.25.143:443 failed"))
+        self.assertEqual(rc, 1)
+        self.assertEqual(err.strip(), "FAILED: connect: ConnectionError: connect to <ip>:443 failed")
+        self.assertEqual(out, "")
+
+    def test_default_remote_connect_uses_the_sigv4_client(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import agentcore_client
+        server = runtime_server(FakeDoris())
+        with mock.patch.object(agentcore_client, "sigv4_client", return_value=Client(server)) as factory:
+            conn = permission_matrix._runtime_connection(RUNTIME_URL, "us-east-1")
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT CURRENT_USER() AS identity")
+                    self.assertEqual(cur.fetchall(), [{"identity": IDENTITY}])
+            finally:
+                conn.close()
+        factory.assert_called_once_with(RUNTIME_URL, "us-east-1")
+
+
+class RuntimeCursor(unittest.TestCase):
+    def cursor(self, body):
+        return permission_matrix.RuntimeCursor(lambda sql: body)
+
+    def test_a_non_mysql_tool_error_keeps_its_code(self):
+        cur = self.cursor({"success": False, "error": {"code": "INVALID_SQL", "message": "Only read-only SQL"}})
+        with self.assertRaises(pymysql.MySQLError) as cm:
+            cur.execute("SELECT 1")
+        self.assertEqual(cm.exception.args, (0, "INVALID_SQL: Only read-only SQL"))
+
+    def test_a_mysql_error_message_becomes_errno_and_text(self):
+        cur = self.cursor({"success": False, "error": {"code": "CONNECTION_ERROR",
+                                                        "message": str(denied())}})
+        with self.assertRaises(pymysql.MySQLError) as cm:
+            cur.execute("SELECT 1")
+        self.assertEqual(cm.exception.args[0], 1105)
+        self.assertTrue(cm.exception.args[1].startswith("errCode = 2, detailMessage = LOAD command denied"))
+        self.assertEqual(classify_error(cm.exception), "denied")
+
+    def test_params_that_need_quoting_are_refused(self):
+        cur = self.cursor({"success": True, "data": {"rows": []}})
+        for bad in ("a'b", "x y", "", 3):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                cur.execute("SELECT 1 WHERE w = %s", (bad,))
+
+    def test_a_reply_that_is_not_a_result_is_an_error(self):
+        with self.assertRaises(pymysql.MySQLError) as cm:
+            self.cursor({"success": True}).execute("SELECT 1")
+        self.assertIn("no rows", cm.exception.args[1])
+
+
+class ExpectHostDirect(unittest.TestCase):
+    def test_expect_host_also_checks_a_direct_connection(self):
+        rc, out, err, _, _ = run_main(["--expect-host", "%"])
+        self.assertEqual(rc, 0, err)
+        self.assertIn(f"ok    identity: {IDENTITY}", out)
+        self.assertIn("5/5 checks pass", out)
 
 
 if __name__ == "__main__":

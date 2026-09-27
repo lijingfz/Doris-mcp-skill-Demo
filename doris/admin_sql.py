@@ -8,7 +8,9 @@ env    DORIS_HOST, DORIS_PORT (9030), DORIS_ADMIN_USER, DORIS_ADMIN_PASSWORD; AP
 The SQL may reference ${MCP_SVC_PASSWORD}; it is filled in memory only. Dry-run (default) prints the
 statements with the password masked and never connects. Only account statements for the secret's
 user are accepted: CREATE USER IF NOT EXISTS / ALTER USER ... IDENTIFIED BY / GRANT of SELECT_PRIV
-and CREATE_PRIV on a single internal database.
+and CREATE_PRIV on a single internal database / DROP USER IF EXISTS of an old identity (host
+migration, P3 / T3.5), only after a CREATE USER of another identity of that user and never of an
+identity the same script sets up.
 """
 
 from __future__ import annotations
@@ -27,10 +29,13 @@ _PASSWORD_RE = re.compile(r"^[A-Za-z0-9]{16,128}$")
 _PLACEHOLDER_RE = re.compile(r"\$\{([A-Z_]+)\}")
 _IDENT = r"(?P<ident>'(?P<user>[a-z_][a-z0-9_]*)'@'[0-9.%]+')"
 _PRIV = r"(?:SELECT_PRIV|CREATE_PRIV)"
+_CREATE = re.compile(rf"^CREATE USER IF NOT EXISTS {_IDENT} IDENTIFIED BY '[^']*'$")
+_DROP = re.compile(rf"^DROP USER IF EXISTS {_IDENT}$")
 _ALLOWED = (
-    re.compile(rf"^CREATE USER IF NOT EXISTS {_IDENT} IDENTIFIED BY '[^']*'$"),
+    _CREATE,
     re.compile(rf"^ALTER USER {_IDENT} IDENTIFIED BY '[^']*'$"),
     re.compile(rf"^GRANT {_PRIV}(?:, {_PRIV})* ON internal\.[a-z_][a-z0-9_]*\.\* TO {_IDENT}$"),
+    _DROP,
 )
 
 
@@ -61,6 +66,19 @@ def render(statements: Sequence[str], values: Mapping[str, str]) -> list[str]:
         return values[m.group(1)]
 
     return [_PLACEHOLDER_RE.sub(fill, stmt) for stmt in statements if _match(stmt)]
+
+
+def _check_drops(matches: Sequence[re.Match[str]]) -> None:
+    """A DROP retires an old identity: another identity of the user exists first, and nothing re-creates it."""
+    kept = {m.group("ident") for m in matches if m.re is not _DROP}
+    for i, m in enumerate(matches):
+        if m.re is not _DROP:
+            continue
+        ident, user = m.group("ident"), m.group("user")
+        if ident in kept:
+            raise AdminSqlError(f"DROP USER {ident}: the script also creates or grants {ident}")
+        if not any(c.re is _CREATE and c.group("user") == user for c in matches[:i]):
+            raise AdminSqlError(f"DROP USER {ident} must follow a CREATE USER of another {user} identity")
 
 
 def _read_secret(raw: str) -> tuple[str, str]:
@@ -94,6 +112,7 @@ def main(
     try:
         statements = load_statements(Path(argv[0]).read_text(encoding="utf-8"))
         matches = [_match(s) for s in statements]
+        _check_drops(matches)
         user, password = _read_secret(stdin.read())
         targets = {m.group("user") for m in matches}
         if targets != {user}:
@@ -102,7 +121,7 @@ def main(
     except (OSError, AdminSqlError) as e:
         print(f"ERROR: {e}", file=err)
         return 2
-    identities = sorted({m.group("ident") for m in matches})
+    identities = sorted({m.group("ident") for m in matches if m.re is not _DROP})
     shown = [_mask(s, [password]) for s in rendered]
 
     if env.get("APPLY") != "1":

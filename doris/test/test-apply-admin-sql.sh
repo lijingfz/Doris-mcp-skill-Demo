@@ -79,5 +79,15 @@ check "e2e dry-run: 4 statements as root" yes "$(has "$E2E" "DRY-RUN: 4 statemen
 check "e2e dry-run: no secret or host in output" "no|no|no" \
   "$(has "$E2E" "SvcPw0123")|$(has "$E2E" "RootPw0123")|$(has "$E2E" "198.51.100.7")"
 
+# P3 / T3.5 host migration script through the same path.
+E2E="$(cd "$(dirname "$SCRIPT")/.." && env -u DORIS_ROOT_PASSWORD PATH="$TMP/bin:$PATH" FAKE_LOG="$TMP/aws.log" \
+  PYTHON_BIN="$REAL_PY" DORIS_CRED_FILE="$TMP/cred.env" APPLY=0 bash "$SCRIPT" doris/02_mcp_user_vpc.sql 2>&1)"
+check "e2e 02 dry-run: new identity first, '%' dropped last" "yes|yes" \
+  "$(has "$E2E" "DRY-RUN SQL: CREATE USER IF NOT EXISTS 'mcp_svc'@'172.31.%' IDENTIFIED BY '***'")|$(has "$E2E" \
+  "DRY-RUN SQL: DROP USER IF EXISTS 'mcp_svc'@'%'
+DRY-RUN: 5 statements as root;")"
+check "e2e 02 dry-run: no secret or host in output" "no|no|no" \
+  "$(has "$E2E" "SvcPw0123")|$(has "$E2E" "RootPw0123")|$(has "$E2E" "198.51.100.7")"
+
 if [[ "$FAILS" -gt 0 ]]; then echo "$FAILS failed"; exit 1; fi
 echo "all passed"
