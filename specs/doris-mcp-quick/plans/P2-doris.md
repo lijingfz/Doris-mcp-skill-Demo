@@ -4457,4 +4457,4 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - [x] `query_metric`（`mcp_svc`，经 MCP server）与故事线 SQL 11/11 到分一致；已发布的 22 个指标与本地模型一致（T2.6）
 - [x] P1 整体评审 ①–④ 和 P0 整体评审 M-2、M-8 已修；M-1、M-3、M-4 已记进 tasks.md 的 T4.1、T4.4、T3.4（T2.7）
 - [x] 测试：`doris/test` 119 个（T2.4 的评审修复新增 2 个）、4 组 shell 测试 + `test-lib.sh`、P1 的 `test_agentcore_*.py` 82 个（T2.7 新增 5 个）、upstream 离线测试，全部通过（T2.7 Step 8）
-- [x] 密码和 Doris 主机地址没有出现在任何输出、日志和提交里；每次提交前 check-secrets（含块 1b）都是 OK
+- [x] P2 的提交里没有密码（T2.7 的 check-secrets 扫描了 `main..HEAD` 的全部补丁）和 Doris 主机地址（对 `git log -p 3c55f23..HEAD` 的计数扫描为 0）；仓库里只有 `prepare/` 的原始材料含主机地址，按规则不改；各任务的实测输出都经过 mask / 过滤（见各任务日志）；每个任务提交前 check-secrets（含块 1b）都是 OK（记在各任务的日志或报告里）
