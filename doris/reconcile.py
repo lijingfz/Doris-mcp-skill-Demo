@@ -210,6 +210,12 @@ def _mask(text: str, secrets: Iterable[str]) -> str:
     return text
 
 
+def _failed(error: Exception, secrets: Iterable[str], err: TextIO) -> int:
+    """One masked line instead of a traceback: the message may name the host or carry a password."""
+    print(f"FAILED: {type(error).__name__}: {_mask(str(error), secrets)}", file=err)
+    return 1
+
+
 def fetch(conn: Any, sql: str) -> list[dict[str, Any]]:
     with conn.cursor() as cur:
         cur.execute(sql)
@@ -301,7 +307,7 @@ async def reconcile(cases: Sequence[Case], query: Callable[[Case], Awaitable[lis
             got = await query(case)
             want = reference(case)
             problems = compare(case, got, want)
-        except (ReconcileError, pymysql.MySQLError) as e:
+        except Exception as e:  # noqa: BLE001 - fails only this case; printed masked below, no traceback
             problems = [f"{type(e).__name__}: {e}"]
         if problems:
             failed += 1
@@ -356,11 +362,14 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
             print(f"ERROR: unknown case(s): {', '.join(unknown)}", file=err)
             return 2
         cases = [c for c in CASES if c.name in args.case]
+    env = os.environ if env is None else env
     try:
-        settings = load_settings(os.environ if env is None else env)
+        settings = load_settings(env)
     except SettingsError as e:
         print(f"ERROR: {e}", file=err)
         return 2
+    except Exception as e:  # noqa: BLE001 - e.g. boto3 client setup for DORIS_SECRET_ID
+        return _failed(e, [env.get("DORIS_PASSWORD", ""), env.get("DORIS_HOST", "")], err)
     secrets = [settings.doris_password, settings.doris_host]  # pymysql errors name the host
     try:
         conn = connect(host=settings.doris_host, port=settings.doris_port, user=settings.doris_user,
@@ -386,6 +395,8 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
     except ReconcileError as e:
         print(f"FAILED: {_mask(str(e), secrets)}", file=err)
         return 1
+    except Exception as e:  # noqa: BLE001 - e.g. client_factory / build_server, a transport error
+        return _failed(e, secrets, err)
     finally:
         conn.close()
     return 0 if failed == 0 else 1

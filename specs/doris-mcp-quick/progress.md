@@ -202,3 +202,6 @@
 - 模型：workspace `ecom` 10 个文件、22 个指标、9 张物理表（不含 `dim_user` / `dim_user_address`），time spine `dim_date`；MetricFlow 引擎模式初始化成功，无重名、无阻塞问题。
 - Step 9：`demo_ro` 对真实 Doris 只读跑 `reconcile.py direct`（本机编译 YAML，只执行 SELECT，不访问 `system_mcp`）：11 个用例全部 `ok`（ytd_totals 1 行、monthly_2026 9、yoy_2026 9、channel_ytd 4、area_ytd 7、mini_program_quarterly 7、cat1_items_ytd 12、brand_tier_ytd 3、refund_rate_5_1 2、reviews_by_shop_type_ytd 4、refunds_by_reason_ytd 10），`11/11 cases match`，`exit=0`，与计划期望一致；输出里没有 Doris 主机地址和密码。
 - Doris 无变更（只读）；没有创建或修改 AWS 资源。
+
+### 2026-09-27 T2.4 评审修复
+- 评审（Important）：`mcp` 模式下的意外异常（传输错误、响应缺 `data.rows` 的 KeyError、`client_factory` / `build_server` / `load_settings` 抛出的非 `SettingsError`）会以未 mask 的 traceback 输出。修复：`reconcile()` 把任意 `Exception` 记为该用例的 FAIL（mask 后输出，继续跑后面的用例，照常打印汇总行）；`main()` 对这类异常只输出一行 mask 过的 `FAILED: <类型>: <信息>` 并返回 1（用法 / 配置错误仍返回 2，`KeyboardInterrupt` 照常抛出）。先加 2 个测试（红：2 个 RuntimeError 带着假主机和假密码直接抛出），修复后 `doris/test` 共 43 个测试全部通过。

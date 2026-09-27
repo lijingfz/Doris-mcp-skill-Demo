@@ -20,6 +20,7 @@ import unittest
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "mcp-server" / "src"))
@@ -97,11 +98,25 @@ class FakeClient:
         return SimpleNamespace(content=[SimpleNamespace(text=text)])
 
 
+class FailingClient(FakeClient):
+    """FakeClient whose query_metric raises `error` for one metric list (a transport error, not a tool error)."""
+
+    def __init__(self, bodies, fail_metrics, error):
+        super().__init__(bodies)
+        self.fail_metrics, self.error = list(fail_metrics), error
+
+    async def call_tool(self, name, args, raise_on_error=True):
+        if name == "query_metric" and args["metrics"] == self.fail_metrics:
+            self.calls.append((name, args, raise_on_error))
+            raise self.error
+        return await super().call_tool(name, args, raise_on_error)
+
+
 def ok(data, meta=None):
     return {"success": True, "data": data, **({"meta": meta} if meta else {})}
 
 
-def run_main(argv, env=ENV, conn=None, connect=None, client=None):
+def run_main(argv, env=ENV, conn=None, connect=None, client=None, factory=None):
     out, err, seen = io.StringIO(), io.StringIO(), {}
 
     def fake_connect(**kwargs):
@@ -109,7 +124,7 @@ def run_main(argv, env=ENV, conn=None, connect=None, client=None):
         return conn
 
     rc = reconcile.main(argv, env=env, connect=connect or fake_connect, out=out, err=err,
-                        client_factory=(lambda settings: client) if client else None)
+                        client_factory=factory or ((lambda settings: client) if client else None))
     return rc, out.getvalue(), err.getvalue(), seen
 
 
@@ -341,6 +356,47 @@ class Main(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("published metrics differ", out)
         self.assertIn("missing", out)
+
+    def test_unexpected_case_error_fails_only_that_case_and_is_masked(self):
+        # e.g. a fastmcp transport error (or a KeyError on a malformed body) whose text names the host
+        names = sorted(local_metric_names(MODELS))
+        ytd = next(c for c in CASES if c.name == "ytd_totals")
+        row = {"order_entity__channel": "APP", "gmv": Decimal("2.50"), "order_count": 2}
+        client = FailingClient({"list_metrics": ok([{"name": n, "description": "d"} for n in names],
+                                                   {"total_count": len(names)}),
+                                "query_metric": ok({"columns": list(row), "rows": [json.loads(
+                                    json.dumps(row, default=float))]})},
+                               ytd.metrics, RuntimeError(f"lost connection to 10.0.0.1 ({PASSWORD})"))
+        rc, out, err, _ = run_main(["mcp", "--case", "ytd_totals", "--case", "channel_ytd"],
+                                   conn=FakeConn([row]), client=client)
+        self.assertEqual(rc, 1, out + err)
+        self.assertIn("FAIL  ytd_totals", out)
+        self.assertIn("RuntimeError: lost connection to *** (***)", out)
+        self.assertIn("ok    channel_ytd (1 rows)", out)  # the run goes on after the failed case
+        self.assertIn("1/2 cases match", out)
+        self.assertNotIn(PASSWORD, out + err)
+        self.assertNotIn("10.0.0.1", out + err)
+
+    def test_setup_errors_are_one_masked_line_without_traceback(self):
+        # client_factory / build_server, or a non-SettingsError out of load_settings (e.g. boto3 client setup)
+        boom = RuntimeError(f"cannot start server on 10.0.0.1 ({PASSWORD})")
+
+        def factory(_settings):
+            raise boom
+
+        conn = FakeConn([YTD_ROW])
+        runs = {"client_factory": run_main(["mcp", "--case", "ytd_totals"], conn=conn, factory=factory)}
+        self.assertTrue(conn.closed)
+        with mock.patch.object(reconcile, "load_settings", side_effect=boom):
+            runs["load_settings"] = run_main(["mcp"], conn=FakeConn([]))
+        for step, (rc, out, err, _) in runs.items():
+            with self.subTest(step=step):
+                self.assertEqual(rc, 1)
+                self.assertEqual([line for line in err.splitlines() if line.startswith("FAILED:")],
+                                 ["FAILED: RuntimeError: cannot start server on *** (***)"])
+                self.assertNotIn("Traceback", out + err)
+                self.assertNotIn(PASSWORD, out + err)
+                self.assertNotIn("10.0.0.1", out + err)
 
 
 if __name__ == "__main__":
