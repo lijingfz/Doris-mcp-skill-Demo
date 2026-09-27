@@ -2,11 +2,14 @@
 
     python doris/reconcile.py direct [--models DIR] [--case NAME ...]   # compile the local YAML, run via pymysql
     python doris/reconcile.py mcp [--workspace ecom] [--case NAME ...]  # in-process MCP server: list_metrics + query_metric
+    python doris/reconcile.py mcp --url "$RUNTIME_URL" [--region R]    # the deployed Runtime over SigV4 (P3)
 
 Connection: agentcore_ext.settings.load_settings(os.environ) -- DORIS_HOST, DORIS_PORT and either
 DORIS_SECRET_ID or DORIS_USER/DORIS_PASSWORD. Every statement is a SELECT; the MCP server may run its
 CREATE ... IF NOT EXISTS on system_mcp. Each case runs the metric query and a hand-written reference
 SQL (column aliases = the semantic output columns) and compares the rows by the group-by key.
+With --url the metric queries go to the deployed Runtime (AWS_* credentials); the reference SQL still
+runs over pymysql as the load_settings account.
 Exit 0 when every case matches, 1 on a mismatch or runtime error, 2 on usage/configuration errors.
 """
 
@@ -329,6 +332,16 @@ def _in_process_client(settings: Settings) -> Any:
     return Client(build_server(settings))
 
 
+def _remote_client(url: str, region: str | None) -> Any:
+    """fastmcp Client for a Runtime invoke URL (inbound auth AWS_IAM), see scripts/agentcore_client.py."""
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import agentcore_client
+
+    return agentcore_client.sigv4_client(url, region)
+
+
 async def _run_mcp(client: Any, models_dir: Path, workspace: str, cases: Sequence[Case],
                    reference: Callable[[Case], list[dict[str, Any]]], out: TextIO, secrets: Sequence[str]) -> int:
     expected = local_metric_names(models_dir)
@@ -348,13 +361,22 @@ async def _run_mcp(client: Any, models_dir: Path, workspace: str, cases: Sequenc
 
 def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None,
          connect: Callable[..., Any] = pymysql.connect, out: TextIO = sys.stdout, err: TextIO = sys.stderr,
-         client_factory: Callable[[Settings], Any] | None = None) -> int:
+         client_factory: Callable[[Settings], Any] | None = None,
+         remote_client_factory: Callable[[str, str | None], Any] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Reconcile ecom semantic metrics with the storyline SQL.")
     parser.add_argument("mode", choices=("direct", "mcp"))
     parser.add_argument("--models", type=Path, default=MODELS_DIR, help="local semantic YAML directory")
     parser.add_argument("--workspace", default="ecom", help="MCP workspace (mcp mode)")
     parser.add_argument("--case", action="append", default=[], help="run only this case (repeatable)")
+    parser.add_argument("--url", help="mcp mode: the deployed Runtime's invoke URL (SigV4) instead of in-process")
+    parser.add_argument("--region", help="mcp --url: SigV4 region (default: taken from the URL)")
     args = parser.parse_args(argv)
+    if args.url and args.mode != "mcp":
+        print("ERROR: --url only applies to mcp mode", file=err)
+        return 2
+    if args.region and not args.url:
+        print("ERROR: --region only applies with --url", file=err)
+        return 2
 
     cases = list(CASES)
     if args.case:
@@ -389,6 +411,9 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
             if args.mode == "direct":
                 backend = DirectBackend(args.models, tmp, fetch=lambda sql: fetch(conn, sql))
                 failed = asyncio.run(reconcile(cases, backend.query, reference, out, secrets))
+            elif args.url:
+                client = (remote_client_factory or _remote_client)(args.url, args.region)
+                failed = asyncio.run(_run_mcp(client, args.models, args.workspace, cases, reference, out, secrets))
             else:
                 # A fresh workspace dir, so the server reads the published models from Doris, not a cache.
                 client = (client_factory or _in_process_client)(dataclasses.replace(settings, workspace_dir=tmp))

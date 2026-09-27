@@ -1,0 +1,15 @@
+[
+  {"tool": "get_query_guide", "params": {}},
+  {"tool": "check_service_health", "params": {}},
+  {"tool": "list_databases", "params": {}},
+  {"tool": "list_tables", "params": {"database": "ecom"}},
+  {"tool": "describe_table", "params": {"database": "ecom", "table": "fact_order"}},
+  {"tool": "execute_query", "params": {"sql": "SELECT COUNT(*) AS n FROM ecom.fact_order"}},
+  {"tool": "list_metrics", "params": {"workspace": "ecom"}},
+  {"tool": "list_dimensions_for_metric", "params": {"workspace": "ecom", "metric_name": "gmv"}},
+  {"tool": "query_metric", "params": {"workspace": "ecom", "metrics": ["gmv"], "group_by": ["metric_time__month"],
+                                      "where": "metric_time >= '2026-01-01'"}},
+  {"tool": "reload_semantic_layer", "params": {"workspace": "ecom"}},
+  {"tool": "list_recent_queries", "params": {"limit": 5}},
+  {"tool": "get_query_profile", "params": {"query_id": "ffffffffffffffff-ffffffffffffffff"}}
+]

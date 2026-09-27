@@ -116,7 +116,7 @@ def ok(data, meta=None):
     return {"success": True, "data": data, **({"meta": meta} if meta else {})}
 
 
-def run_main(argv, env=ENV, conn=None, connect=None, client=None, factory=None):
+def run_main(argv, env=ENV, conn=None, connect=None, client=None, factory=None, remote=None):
     out, err, seen = io.StringIO(), io.StringIO(), {}
 
     def fake_connect(**kwargs):
@@ -124,8 +124,13 @@ def run_main(argv, env=ENV, conn=None, connect=None, client=None, factory=None):
         return conn
 
     rc = reconcile.main(argv, env=env, connect=connect or fake_connect, out=out, err=err,
-                        client_factory=factory or ((lambda settings: client) if client else None))
+                        client_factory=factory or ((lambda settings: client) if client else None),
+                        remote_client_factory=remote)
     return rc, out.getvalue(), err.getvalue(), seen
+
+
+RUNTIME_URL = ("https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-east-1"
+               "%3A111122223333%3Aruntime%2Fdorismcp_dorismcp-AbCdEf1234/invocations?qualifier=DEFAULT")
 
 
 class Normalize(unittest.TestCase):
@@ -410,6 +415,72 @@ class Main(unittest.TestCase):
                 self.assertNotIn("Traceback", out + err)
                 self.assertNotIn(PASSWORD, out + err)
                 self.assertNotIn("10.0.0.1", out + err)
+
+
+class Remote(unittest.TestCase):
+    """mcp --url: the deployed Runtime over SigV4 (P3 / T3.3); the reference SQL still runs on pymysql."""
+
+    def _client(self):
+        names = sorted(local_metric_names(MODELS))
+        return FakeClient({"list_metrics": ok([{"name": n, "description": "d"} for n in names],
+                                              {"total_count": len(names)}),
+                           "query_metric": ok({"columns": list(YTD_ROW), "rows": [json.loads(
+                               json.dumps(YTD_ROW, default=float))]})})
+
+    def test_url_reconciles_against_the_deployed_runtime(self):
+        client, seen = self._client(), []
+
+        def remote(url, region):
+            seen.append((url, region))
+            return client
+
+        def in_process(_settings):
+            raise AssertionError("--url must not start an in-process server")
+
+        conn = FakeConn([YTD_ROW])
+        rc, out, err, kwargs = run_main(["mcp", "--url", RUNTIME_URL, "--case", "ytd_totals"], conn=conn,
+                                        factory=in_process, remote=remote)
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(seen, [(RUNTIME_URL, None)])
+        self.assertEqual([c[0] for c in client.calls], ["list_metrics", "query_metric"])
+        self.assertEqual(len(conn.executed), 1)  # the reference SQL, as the load_settings account
+        self.assertEqual(kwargs["user"], "demo_ro")
+        self.assertIn("1/1 cases match", out)
+
+    def test_region_is_passed_through(self):
+        seen = []
+        client = self._client()
+        run_main(["mcp", "--url", RUNTIME_URL, "--region", "us-east-1", "--case", "ytd_totals"],
+                 conn=FakeConn([YTD_ROW]), remote=lambda url, region: seen.append(region) or client)
+        self.assertEqual(seen, ["us-east-1"])
+
+    def test_url_and_region_are_mcp_mode_options(self):
+        for argv in (["direct", "--url", RUNTIME_URL], ["mcp", "--region", "us-east-1"]):
+            with self.subTest(argv=argv):
+                rc, _, err, kwargs = run_main(argv, conn=FakeConn([]))
+                self.assertEqual(rc, 2)
+                self.assertIn("ERROR:", err)
+                self.assertEqual(kwargs, {})  # rejected before connecting to Doris
+
+    def test_remote_setup_error_is_one_masked_line(self):
+        def remote(_url, _region):
+            raise RuntimeError("no AWS credentials found (set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)")
+
+        conn = FakeConn([YTD_ROW])
+        rc, out, err, _ = run_main(["mcp", "--url", RUNTIME_URL], conn=conn, remote=remote)
+        self.assertEqual(rc, 1)
+        self.assertEqual([line for line in err.splitlines() if line.startswith("FAILED:")],
+                         ["FAILED: RuntimeError: no AWS credentials found (set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)"])
+        self.assertNotIn("Traceback", out + err)
+        self.assertTrue(conn.closed)
+
+    def test_default_remote_client_is_the_sigv4_client(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import agentcore_client
+
+        with mock.patch.object(agentcore_client, "sigv4_client", return_value="client") as sigv4:
+            self.assertEqual(reconcile._remote_client(RUNTIME_URL, "us-east-1"), "client")
+        sigv4.assert_called_once_with(RUNTIME_URL, "us-east-1")
 
 
 if __name__ == "__main__":
