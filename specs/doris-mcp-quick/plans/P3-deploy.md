@@ -5013,6 +5013,272 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+### Task T3.6：关闭 T3.5 遗留的 7 个 minor（P3 整体评审之后补充）
+
+P3 整体评审之后，用户要求「关闭 T3.5 留下的minor」。这 7 条来自 progress「P3 整体评审（opus）」→「各任务评审遗留的 minor」里以 T3.5 开头的 7 行。其他任务遗留的 minor 和整体评审的 6 个 Minor 不在本任务范围内。
+- 在分支 `p3-minors`（从 `main` 切出）上执行。
+- 没有 GATE。除 Step 7（用户侧，只读，只输出计数）以外，不访问 AWS、Doris、Runtime。
+- 执行方式：native（控制方自己按 TDD 执行），完成后由一个 opus reviewer 评审。
+
+| # | minor | 改动 | 测试 |
+|---|---|---|---|
+| 1 | `admin_sql` 不要求 DROP 放在最后：`CREATE X; DROP '%'; GRANT … TO X` 会被接受；单独调用 `render()` 时，孤立的 DROP 也会被接受 | `_check_drops` 规定 DROP 之后不能再有 CREATE / ALTER / GRANT；`render()` 也调用 `_check_drops` | `test_a_statement_after_a_drop_is_refused`、`test_render_applies_the_drop_rules` |
+| 2 | `permission_matrix --url` 的错误输出不 mask Runtime URL | `--url` 模式的 `secrets` 加上 `args.url`（替换成 `***`） | `test_the_runtime_url_is_masked` |
+| 3 | `finally` 里的 `conn.close()` 没有保护：`__aexit__` 的传输错误会打印原始 traceback（可能含 URL），并覆盖结果 | 捕获 `Exception`，输出一行 mask 过的 `WARN: close: …` 到 stderr，exit code 保持原来的结果 | `test_a_failed_close_is_one_masked_warning_and_keeps_the_result`（结果 0 和 1 各一个 subTest） |
+| 4 | `test_a_session_failure_is_one_masked_line` 的 fixture 用了真实的 Doris 私网 IP | 换成 TEST-NET 的 `198.51.100.7`，断言不变（`--url` 模式把 IPv4 mask 成 `<ip>`）。改前改后都通过，所以没有红灯 | 该测试本身；验证方法：测试文件里命中私网 IP 的行数从 1 变成 0 |
+| 5 | FE 审计日志一项在没有 `IDENTIFIED BY` 条数的情况下就关闭了 | 用户侧补充计数（Step 7） | — |
+| 6 | T3.5 日志的只读调用清单漏了 Step 7 / 9 / 11 / 12 的 SigV4 `InvokeAgentRuntime` | 日志只追加不修改，所以在本任务的日志里写一条更正 | — |
+| 7 | (a) `test_default_remote_connect_uses_the_sigv4_client` 把 `scripts/` 留在了 `sys.path` 上；(b) `RuntimeCursor.execute` 遇到不是 dict 的 `data` 会 AttributeError | (a) `addCleanup(sys.path.remove, …)`；(b) 只有 `data` 是 dict 时才取 `rows`，否则是 `no rows` 的 `OperationalError` | (a) 只改测试本身，没有红灯；验证方法：单独运行该测试前后比较 `sys.path`。(b) `test_a_reply_that_is_not_a_result_is_an_error` 扩成 4 个 subTest |
+
+**Files:**
+- Modify: `doris/admin_sql.py`（docstring、`render`、`_check_drops`、`main` 的注释）
+- Modify: `doris/permission_matrix.py`（docstring、`RuntimeCursor.execute`、`main` 的 `secrets` 和 `finally`）
+- Test: `doris/test/test_admin_sql.py`（`DropUser` 加 2 个）、`doris/test/test_permission_matrix.py`（`RemoteRuntime` 加 2 个并改 1 个 fixture 和 1 处清理，`RuntimeCursor` 改 1 个）
+- Modify: `specs/doris-mcp-quick/tasks.md`、`specs/doris-mcp-quick/progress.md`
+
+- [ ] **Step 1：分支**
+
+```bash
+git switch -c p3-minors   # 从 main（f88a773）
+```
+
+- [ ] **Step 2：写失败测试**
+
+`doris/test/test_admin_sql.py`，加在 `DropUser.test_dropping_another_user_is_refused` 之后：
+```python
+    def test_a_statement_after_a_drop_is_refused(self):
+        # The old identity must not disappear while the new one is still being set up.
+        sql = MIGRATE_SQL.replace("GRANT SELECT_PRIV ON internal.ecom.* TO 'mcp_svc'@'172.31.%';\n", "") + \
+            "GRANT SELECT_PRIV ON internal.ecom.* TO 'mcp_svc'@'172.31.%';\n"
+        rc, output, conn = run(sql=sql, apply=True)
+        self.assertEqual(rc, 2)
+        self.assertIn("DROP USER 'mcp_svc'@'%' must come after every CREATE / ALTER / GRANT", output)
+        self.assertEqual(conn.executed, [])
+
+    def test_render_applies_the_drop_rules(self):
+        stmts = admin_sql.load_statements(MIGRATE_SQL)
+        for bad, why in ((stmts[-1:], "must follow a CREATE USER"),
+                         ([stmts[0], stmts[2], stmts[1]], "must come after every CREATE / ALTER / GRANT")):
+            with self.subTest(bad=bad), self.assertRaisesRegex(admin_sql.AdminSqlError, why):
+                admin_sql.render(bad, {"MCP_SVC_PASSWORD": PW})
+```
+
+`doris/test/test_permission_matrix.py`：
+- `RemoteRuntime.run_remote` 加参数 `close_error=None`，并用一个关闭时出错的 Client：
+```python
+    def run_remote(self, argv=(), doris=None, apply=False, remote_error=None, close_error=None):
+        doris = doris or FakeDoris({"SELECT CURRENT_USER()": [{"identity": VPC_IDENTITY}]})
+        remote_calls = []
+
+        class CloseFails(Client):  # e.g. the session DELETE hits a transport error after the checks
+            async def __aexit__(self, *exc_info):
+                await super().__aexit__(*exc_info)
+                raise close_error
+
+        def remote_connect(url, region):
+            remote_calls.append((url, region))
+            if remote_error:
+                raise remote_error
+            return permission_matrix.RuntimeConnection((CloseFails if close_error else Client)(runtime_server(doris)))
+```
+- `test_a_session_failure_is_one_masked_line`：把 `ConnectionError("connect to …:443 failed")` 里的 IPv4 换成 `198.51.100.7`，断言不变。改的时候不要打印原来那一行，可以用：
+```bash
+.venv/bin/python - <<'EOF'
+import re, pathlib
+p = pathlib.Path("doris/test/test_permission_matrix.py")
+lines = p.read_text(encoding="utf-8").split("\n")
+n = 0
+for i, line in enumerate(lines):
+    if "ConnectionError(\"connect to " in line and ":443 failed" in line:
+        new = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", "198.51.100.7", line)
+        n += new != line
+        lines[i] = new
+p.write_text("\n".join(lines), encoding="utf-8")
+print("lines changed:", n)
+EOF
+```
+- 在它后面加 2 个测试，并给 `test_default_remote_connect_uses_the_sigv4_client` 加上清理：
+```python
+    def test_the_runtime_url_is_masked(self):
+        rc, out, err, _, _ = self.run_remote(remote_error=ConnectionError(f"POST {RUNTIME_URL} failed"))
+        self.assertEqual(rc, 1)
+        self.assertEqual(err.strip(), "FAILED: connect: ConnectionError: POST *** failed")
+
+    def test_a_failed_close_is_one_masked_warning_and_keeps_the_result(self):
+        # A passing run stays 0; the old identity with --expect-host stays 1.
+        for doris, argv, rc_want, summary in ((None, [], 0, "4/4 checks pass"),
+                                              (FakeDoris(), ["--expect-host", "172.31.%"], 1, "4/5 checks pass")):
+            with self.subTest(rc_want=rc_want):
+                rc, out, err, _, _ = self.run_remote(argv, doris=doris,
+                                                     close_error=ConnectionError(f"DELETE {RUNTIME_URL} failed"))
+                self.assertEqual(rc, rc_want, out + err)
+                self.assertIn(summary, out)
+                self.assertEqual(err.strip(), "WARN: close: ConnectionError: DELETE *** failed")
+
+    def test_default_remote_connect_uses_the_sigv4_client(self):
+        scripts = str(ROOT / "scripts")
+        sys.path.insert(0, scripts)
+        self.addCleanup(sys.path.remove, scripts)
+        import agentcore_client
+        # … the rest unchanged
+```
+- `RuntimeCursor.test_a_reply_that_is_not_a_result_is_an_error`：
+```python
+    def test_a_reply_that_is_not_a_result_is_an_error(self):
+        for data in (None, "text", [{"identity": IDENTITY}], {"rows": "text"}):
+            with self.subTest(data=data):
+                with self.assertRaises(pymysql.MySQLError) as cm:
+                    self.cursor({"success": True, "data": data}).execute("SELECT 1")
+                self.assertIn("no rows", cm.exception.args[1])
+```
+
+- [ ] **Step 3：运行测试，确认失败**
+
+```bash
+.venv/bin/python -m unittest discover -s doris/test > /tmp/t36-red.log 2>&1
+grep -E '^(FAIL|ERROR):' /tmp/t36-red.log | sed -E 's/ \(.*//' | sort -u
+grep -E '^Ran|^FAILED|^OK' /tmp/t36-red.log
+```
+期望（实测）：
+```
+ERROR: test_a_failed_close_is_one_masked_warning_and_keeps_the_result
+ERROR: test_a_reply_that_is_not_a_result_is_an_error
+FAIL: test_a_statement_after_a_drop_is_refused
+FAIL: test_render_applies_the_drop_rules
+FAIL: test_the_runtime_url_is_masked
+Ran 155 tests in …
+FAILED (failures=4, errors=4)
+```
+失败原因：
+- 放错位置的 DROP 被接受（`0 != 2`）；
+- `render()` 的两个 subTest 都是 `AdminSqlError not raised`；
+- URL 没有被 mask；
+- `close()` 的 `ConnectionError` 直接抛出（2 个 subTest）；
+- 不是 dict 的 `data` 导致 `AttributeError: 'str' / 'list' object has no attribute 'get'`（2 个 subTest）。
+
+- [ ] **Step 4：实现**
+
+`doris/admin_sql.py`：
+```python
+def render(statements: Sequence[str], values: Mapping[str, str]) -> list[str]:
+    """Check every statement against the allowlist and the DROP rules, then fill ${NAME} placeholders."""
+
+    def fill(m: re.Match[str]) -> str:
+        if m.group(1) not in values:
+            raise AdminSqlError(f"unknown placeholder ${{{m.group(1)}}}")
+        return values[m.group(1)]
+
+    _check_drops([_match(stmt) for stmt in statements])
+    return [_PLACEHOLDER_RE.sub(fill, stmt) for stmt in statements]
+
+
+def _check_drops(matches: Sequence[re.Match[str]]) -> None:
+    """A DROP retires an old identity: another identity of the user is set up first, and nothing re-creates it."""
+    kept = {m.group("ident") for m in matches if m.re is not _DROP}
+    for i, m in enumerate(matches):
+        if m.re is not _DROP:
+            continue
+        ident, user = m.group("ident"), m.group("user")
+        if ident in kept:
+            raise AdminSqlError(f"DROP USER {ident}: the script also creates or grants {ident}")
+        if not any(c.re is _CREATE and c.group("user") == user for c in matches[:i]):
+            raise AdminSqlError(f"DROP USER {ident} must follow a CREATE USER of another {user} identity")
+        if any(c.re is not _DROP for c in matches[i:]):
+            raise AdminSqlError(f"DROP USER {ident} must come after every CREATE / ALTER / GRANT")
+```
+- `main()` 里原来的 `_check_drops(matches)` 保留，加注释 `# before the secret is read; render() checks again`。
+- 模块 docstring 的 DROP 一句改成：`…, only after a CREATE USER of another identity of that user, never of an identity the same script sets up, and only at the end of the script.`
+
+`doris/permission_matrix.py`：
+```python
+        data = body.get("data")
+        rows = data.get("rows") if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+```
+```python
+        secrets: list[str | re.Pattern[str]] = [args.url, env.get("DORIS_HOST", ""), _IPV4_RE]
+```
+```python
+    finally:
+        try:
+            conn.close()
+        except Exception as e:  # noqa: BLE001 - e.g. --url: the session DELETE failed; the result stands
+            emit(f"WARN: close: {type(e).__name__}: {e}", err)
+```
+- 模块 docstring：`IPv4 addresses in the output are masked as <ip>` 改成 `the URL is masked as *** and IPv4 addresses as <ip>`。
+
+- [ ] **Step 5：运行测试，确认通过**
+
+```bash
+.venv/bin/python -m unittest discover -s doris/test 2>&1 | tail -3                                  # 期望：Ran 155 tests / OK
+.venv/bin/python -m unittest discover -s scripts/test 2>&1 | tail -3                                # 期望：Ran 53 tests / OK
+.venv/bin/python -m unittest discover -s mcp-server/test -p 'test_agentcore_*.py' 2>&1 | tail -3    # 期望：Ran 89 tests / OK
+for t in doris/test/test-apply-admin-sql.sh doris/test/test-publish-semantic.sh infra/test/test-35-runtime-role.sh \
+         infra/test/test-40-doris-secret.sh infra/test/test-lib.sh scripts/test/test-check-secrets.sh; do
+  printf '%s: ' "$t"; bash "$t" 2>&1 | tail -1
+done                                                                                                 # 期望：6 行 all passed
+PYTHON_BIN=$PWD/.venv/bin/python bash mcp-server/test/run_all_tests.sh --offline 2>&1 | tail -3     # 期望：🎉 All tests passed!
+```
+7(a) 的验证（期望：`ok: True sys.path unchanged: True`）：
+```bash
+(cd doris/test && ../../.venv/bin/python - <<'EOF'
+import sys, unittest
+import test_permission_matrix as t
+before = list(sys.path)
+r = unittest.TextTestRunner(verbosity=0).run(unittest.defaultTestLoader.loadTestsFromName(
+    "RemoteRuntime.test_default_remote_connect_uses_the_sigv4_client", t))
+print("ok:", r.wasSuccessful(), "sys.path unchanged:", sys.path == before)
+EOF
+)
+```
+4 的验证（只输出计数；私网 IP 取自 `agentcore.json`，不打印。期望：`0`，改动前是 `1`）：
+```bash
+v="$(.venv/bin/python -c 'import re; s=open("dorismcp/agentcore/agentcore.json").read(); print("\n".join(sorted(set(re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", s)))))')"
+grep -cF -f <(printf '%s\n' "$v") doris/test/test_permission_matrix.py; unset v
+```
+
+- [ ] **Step 6：提交离线部分**
+
+```bash
+bash scripts/check-secrets.sh | tail -1   # 期望：check-secrets: OK (… files scanned)
+git add doris/admin_sql.py doris/permission_matrix.py doris/test/test_admin_sql.py doris/test/test_permission_matrix.py \
+        specs/doris-mcp-quick/plans/P3-deploy.md specs/doris-mcp-quick/tasks.md specs/doris-mcp-quick/progress.md
+git commit -m "fix(p3): T3.6 T3.5 minors: DROPs last and checked in render(); --url masks the URL; guarded close(); TEST-NET fixture
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+然后派一个 opus reviewer 评审这个提交（评审包里的 IP / URL 都要 mask）。
+
+- [ ] **Step 7：`IDENTIFIED BY` 的条数**（用户侧，只输出计数）
+
+请用户执行 T3.5 Step 14 的第二条命令，只回复每个文件的计数：
+```bash
+! ssh <ssh 目标> 'sudo grep -c "IDENTIFIED BY" /data/doris/fe/log/fe.audit.log*'
+```
+判断（T3.5 Step 14 已确认每个文件的密码命中都是 0）：
+- 条数大于 0：说明审计日志记录了这类语句，并且遮盖了密码。minor 5 关闭。
+- 条数都是 0：说明审计日志没有记录这类语句。T3.5 Step 8 是 2026-09-27 执行的，不太可能已经滚动掉。这种情况下密码不会经审计日志泄漏，minor 5 同样关闭，但要在日志里写明「没有证明 Doris 会遮盖密码」。
+
+- [ ] **Step 8：收尾**
+
+- 勾选 T3.6。
+- progress：更新「当前状态」，并追加日志，记录这些内容：
+  - Step 3 的失败数、Step 5 的测试数、4 和 7(a) 的验证结果；
+  - minor 6 的更正；
+  - Step 7 用户给出的计数；
+  - 评审结论；
+  - 在「P3 整体评审（opus）」对应的 7 行后面注明已由 T3.6 关闭。日志不改原文，只在新日志里写。
+```bash
+bash scripts/check-secrets.sh | tail -1
+git add specs/doris-mcp-quick/tasks.md specs/doris-mcp-quick/progress.md
+git commit -m "docs(p3): T3.6 closed: FE audit IDENTIFIED BY count, review
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+合并方式和是否推送由用户决定（D8）。
+
+---
+
 ## P3 完成标准（对照 design §11 P3 行）
 
 - [ ] Runtime `dorismcp_dorismcp` 运行完整的 `mcp-server/`，`RUNTIME_ARN` 不变。执行角色是 `doris-mcp-runtime-role`：

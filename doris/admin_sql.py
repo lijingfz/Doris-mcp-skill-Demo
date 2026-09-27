@@ -9,8 +9,8 @@ The SQL may reference ${MCP_SVC_PASSWORD}; it is filled in memory only. Dry-run 
 statements with the password masked and never connects. Only account statements for the secret's
 user are accepted: CREATE USER IF NOT EXISTS / ALTER USER ... IDENTIFIED BY / GRANT of SELECT_PRIV
 and CREATE_PRIV on a single internal database / DROP USER IF EXISTS of an old identity (host
-migration, P3 / T3.5), only after a CREATE USER of another identity of that user and never of an
-identity the same script sets up.
+migration, P3 / T3.5), only after a CREATE USER of another identity of that user, never of an
+identity the same script sets up, and only at the end of the script.
 """
 
 from __future__ import annotations
@@ -58,18 +58,19 @@ def _match(stmt: str) -> re.Match[str]:
 
 
 def render(statements: Sequence[str], values: Mapping[str, str]) -> list[str]:
-    """Check every statement against the allowlist, then fill ${NAME} placeholders."""
+    """Check every statement against the allowlist and the DROP rules, then fill ${NAME} placeholders."""
 
     def fill(m: re.Match[str]) -> str:
         if m.group(1) not in values:
             raise AdminSqlError(f"unknown placeholder ${{{m.group(1)}}}")
         return values[m.group(1)]
 
-    return [_PLACEHOLDER_RE.sub(fill, stmt) for stmt in statements if _match(stmt)]
+    _check_drops([_match(stmt) for stmt in statements])
+    return [_PLACEHOLDER_RE.sub(fill, stmt) for stmt in statements]
 
 
 def _check_drops(matches: Sequence[re.Match[str]]) -> None:
-    """A DROP retires an old identity: another identity of the user exists first, and nothing re-creates it."""
+    """A DROP retires an old identity: another identity of the user is set up first, and nothing re-creates it."""
     kept = {m.group("ident") for m in matches if m.re is not _DROP}
     for i, m in enumerate(matches):
         if m.re is not _DROP:
@@ -79,6 +80,8 @@ def _check_drops(matches: Sequence[re.Match[str]]) -> None:
             raise AdminSqlError(f"DROP USER {ident}: the script also creates or grants {ident}")
         if not any(c.re is _CREATE and c.group("user") == user for c in matches[:i]):
             raise AdminSqlError(f"DROP USER {ident} must follow a CREATE USER of another {user} identity")
+        if any(c.re is not _DROP for c in matches[i:]):
+            raise AdminSqlError(f"DROP USER {ident} must come after every CREATE / ALTER / GRANT")
 
 
 def _read_secret(raw: str) -> tuple[str, str]:
@@ -112,7 +115,7 @@ def main(
     try:
         statements = load_statements(Path(argv[0]).read_text(encoding="utf-8"))
         matches = [_match(s) for s in statements]
-        _check_drops(matches)
+        _check_drops(matches)  # before the secret is read; render() checks again
         user, password = _read_secret(stdin.read())
         targets = {m.group("user") for m in matches}
         if targets != {user}:

@@ -56,7 +56,7 @@
 
 目标：把 Runtime `dorismcp` 从 P0 的 spike 换成完整的 `mcp-server/`（12 个工具，以 `mcp_svc` 经 Secrets Manager 连 Doris 私网地址），执行角色换成只能写自己的日志、只能读 `doris-mcp/mcp_svc` 的专用角色；经 SigV4 直连和 Gateway 分别冒烟、测耗时和并发、核对审计日志；最后把 `mcp_svc` 的 host 收紧为 `'172.31.%'`。
 全部代码已在 spec 阶段起草并验证（最终 `doris/test` 151 个、`scripts/test` 53 个、`test_agentcore_*.py` 89 个 + 6 组 shell 测试通过），并在 `178be68` 的干净 worktree 上按计划顺序回放过，完整代码嵌在 `plans/P3-deploy.md`。4 个 GATE（建 IAM 角色、deploy、同步 Gateway target、迁移 `mcp_svc` 的 host）在 spec 阶段都没有执行；只读预验证见计划的 Architecture。
-执行顺序 T3.0 → T3.1 → T3.2 → T3.3 → T3.4 → T3.5：T3.0 是 P2 整体评审的遗留小修和补丁 P-09，必须在第一次 deploy 之前完成。T3.5 之后开发机不能再以 `mcp_svc` 登录（1045，预期行为）。
+执行顺序 T3.0 → T3.1 → T3.2 → T3.3 → T3.4 → T3.5：T3.0 是 P2 整体评审的遗留小修和补丁 P-09，必须在第一次 deploy 之前完成。T3.5 之后开发机不能再以 `mcp_svc` 登录（1045，预期行为）。T3.6 是 P3 整体评审之后补充的任务，在分支 `p3-minors` 上执行。
 
 | ✓ | ID | 标签 | 任务 | 需求 | 计划 |
 |---|---|---|---|---|---|
@@ -66,6 +66,7 @@
 | [x] | T3.3 | [AI] | SigV4 直连冒烟（12 个工具 + flow）；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s（共享 session 和每次新 session 逐次测）；`reconcile.py mcp --url` 11/11；Doris 连接来源都在 `172.31.` | R-12, R-32 | P3 §T3.3 |
 | [x] | T3.4 | [AI+GATE] | `synchronize-gateway-targets`；Gateway token 冒烟（`doris___*` 共 12 个）；经 Gateway 每次调用都是冷启动，逐次记录耗时（12 个工具，含 `check_service_health` 和语义工具）并跑 20 个并发（design §13）；测耗时的探针脚本收进仓库，可重复运行（P0 评审 M-4：`mcp_smoke.py time` + `scripts/smoke_calls.json`）；残留连接 600 s 后被回收（P-09）；Gateway DEBUG 泄漏检查（design §14）| R-10, R-12 | P3 §T3.4 |
 | [x] | T3.5 | [AI+GATE] | `mcp_svc` host 收紧为 `'172.31.%'`（D6）：`doris/02_mcp_user_vpc.sql` 先建新身份并授权，最后 `DROP USER IF EXISTS 'mcp_svc'@'%'`；经 Runtime 复核权限 5/5、对账 11/11，开发机登录得到 1045；R-40 只读复核；用户侧检查 FE 审计日志里有没有明文密码（只输出计数）| R-42, R-40 | P3 §T3.5 |
+| [ ] | T3.6 | [AI] | P3 整体评审之后补充：关闭 T3.5 遗留的 7 个 minor。`admin_sql` 的 DROP 必须放在最后，`render()` 也检查 DROP 规则；`permission_matrix --url` mask Runtime URL；`conn.close()` 失败时只输出一行 mask 过的 WARN，结果不变；测试 fixture 换成 TEST-NET 地址；测试清理 `sys.path`；`RuntimeCursor` 遇到不是 dict 的 `data` 也按 `no rows` 处理；更正 T3.5 日志的只读调用清单；用户侧补充 FE 审计日志 `IDENTIFIED BY` 的条数（只输出计数）| R-42（评审项）| P3 §T3.6 |
 
 ## P4 Quick 桌面版（计划：`plans/P4-quick.md`）
 

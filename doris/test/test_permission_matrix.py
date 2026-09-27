@@ -513,15 +513,20 @@ def runtime_server(doris: FakeDoris) -> FastMCP:
 class RemoteRuntime(unittest.TestCase):
     """--url: the read-only checks through the deployed Runtime, as mcp_svc from the VPC (P3 / T3.5)."""
 
-    def run_remote(self, argv=(), doris=None, apply=False, remote_error=None):
+    def run_remote(self, argv=(), doris=None, apply=False, remote_error=None, close_error=None):
         doris = doris or FakeDoris({"SELECT CURRENT_USER()": [{"identity": VPC_IDENTITY}]})
         remote_calls = []
+
+        class CloseFails(Client):  # e.g. the session DELETE hits a transport error after the checks
+            async def __aexit__(self, *exc_info):
+                await super().__aexit__(*exc_info)
+                raise close_error
 
         def remote_connect(url, region):
             remote_calls.append((url, region))
             if remote_error:
                 raise remote_error
-            return permission_matrix.RuntimeConnection(Client(runtime_server(doris)))
+            return permission_matrix.RuntimeConnection((CloseFails if close_error else Client)(runtime_server(doris)))
 
         def no_direct_connect(**kwargs):
             raise AssertionError("--url must not connect to Doris directly")
@@ -581,13 +586,31 @@ class RemoteRuntime(unittest.TestCase):
         self.assertIn("--region only applies with --url", err)
 
     def test_a_session_failure_is_one_masked_line(self):
-        rc, out, err, _, _ = self.run_remote(remote_error=ConnectionError("connect to 172.31.25.143:443 failed"))
+        rc, out, err, _, _ = self.run_remote(remote_error=ConnectionError("connect to 198.51.100.7:443 failed"))
         self.assertEqual(rc, 1)
         self.assertEqual(err.strip(), "FAILED: connect: ConnectionError: connect to <ip>:443 failed")
         self.assertEqual(out, "")
 
+    def test_the_runtime_url_is_masked(self):
+        rc, out, err, _, _ = self.run_remote(remote_error=ConnectionError(f"POST {RUNTIME_URL} failed"))
+        self.assertEqual(rc, 1)
+        self.assertEqual(err.strip(), "FAILED: connect: ConnectionError: POST *** failed")
+
+    def test_a_failed_close_is_one_masked_warning_and_keeps_the_result(self):
+        # A passing run stays 0; the old identity with --expect-host stays 1.
+        for doris, argv, rc_want, summary in ((None, [], 0, "4/4 checks pass"),
+                                              (FakeDoris(), ["--expect-host", "172.31.%"], 1, "4/5 checks pass")):
+            with self.subTest(rc_want=rc_want):
+                rc, out, err, _, _ = self.run_remote(argv, doris=doris,
+                                                     close_error=ConnectionError(f"DELETE {RUNTIME_URL} failed"))
+                self.assertEqual(rc, rc_want, out + err)
+                self.assertIn(summary, out)
+                self.assertEqual(err.strip(), "WARN: close: ConnectionError: DELETE *** failed")
+
     def test_default_remote_connect_uses_the_sigv4_client(self):
-        sys.path.insert(0, str(ROOT / "scripts"))
+        scripts = str(ROOT / "scripts")
+        sys.path.insert(0, scripts)
+        self.addCleanup(sys.path.remove, scripts)
         import agentcore_client
         server = runtime_server(FakeDoris())
         with mock.patch.object(agentcore_client, "sigv4_client", return_value=Client(server)) as factory:
@@ -627,9 +650,11 @@ class RuntimeCursor(unittest.TestCase):
                 cur.execute("SELECT 1 WHERE w = %s", (bad,))
 
     def test_a_reply_that_is_not_a_result_is_an_error(self):
-        with self.assertRaises(pymysql.MySQLError) as cm:
-            self.cursor({"success": True}).execute("SELECT 1")
-        self.assertIn("no rows", cm.exception.args[1])
+        for data in (None, "text", [{"identity": IDENTITY}], {"rows": "text"}):
+            with self.subTest(data=data):
+                with self.assertRaises(pymysql.MySQLError) as cm:
+                    self.cursor({"success": True, "data": data}).execute("SELECT 1")
+                self.assertIn("no rows", cm.exception.args[1])
 
 
 class ExpectHostDirect(unittest.TestCase):

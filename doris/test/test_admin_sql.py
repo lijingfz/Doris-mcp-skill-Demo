@@ -205,6 +205,22 @@ class DropUser(unittest.TestCase):
         self.assertIn("'demo_ro'", output)
         self.assertEqual(conn.executed, [])
 
+    def test_a_statement_after_a_drop_is_refused(self):
+        # The old identity must not disappear while the new one is still being set up.
+        sql = MIGRATE_SQL.replace("GRANT SELECT_PRIV ON internal.ecom.* TO 'mcp_svc'@'172.31.%';\n", "") + \
+            "GRANT SELECT_PRIV ON internal.ecom.* TO 'mcp_svc'@'172.31.%';\n"
+        rc, output, conn = run(sql=sql, apply=True)
+        self.assertEqual(rc, 2)
+        self.assertIn("DROP USER 'mcp_svc'@'%' must come after every CREATE / ALTER / GRANT", output)
+        self.assertEqual(conn.executed, [])
+
+    def test_render_applies_the_drop_rules(self):
+        stmts = admin_sql.load_statements(MIGRATE_SQL)
+        for bad, why in ((stmts[-1:], "must follow a CREATE USER"),
+                         ([stmts[0], stmts[2], stmts[1]], "must come after every CREATE / ALTER / GRANT")):
+            with self.subTest(bad=bad), self.assertRaisesRegex(admin_sql.AdminSqlError, why):
+                admin_sql.render(bad, {"MCP_SVC_PASSWORD": PW})
+
 
 if __name__ == "__main__":
     unittest.main()

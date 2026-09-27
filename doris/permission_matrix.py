@@ -9,7 +9,7 @@ DORIS_SECRET_ID=doris-mcp/mcp_svc (or DORIS_USER/DORIS_PASSWORD).
 With --url the read-only checks go through the deployed Runtime's execute_query tool over SigV4
 (AWS_* credentials; scripts/agentcore_client.py), i.e. as mcp_svc from the VPC: after P3 / T3.5 that
 is the only place the account can log in from. The probes need a direct connection (APPLY=1 refuses
---url); IPv4 addresses in the output are masked as <ip>. --expect-host H adds a check that the
+--url); the URL is masked as *** and IPv4 addresses as <ip>. --expect-host H adds a check that the
 connected identity is exactly 'mcp_svc'@'H'.
 Read-only checks: SHOW GRANTS equals EXPECTED_GRANTS exactly (R-42), SHOW DATABASES equals
 EXPECTED_DATABASES, every physical table of the models is readable, the workspace has a metadata
@@ -294,7 +294,8 @@ class RuntimeCursor:
         body = self._run_sql(_inline(sql, params))
         if body.get("success") is not True:
             raise _tool_error(body)
-        rows = (body.get("data") or {}).get("rows")
+        data = body.get("data")
+        rows = data.get("rows") if isinstance(data, dict) else None
         if not isinstance(rows, list):
             raise pymysql.err.OperationalError(0, "no rows in the execute_query reply")
         self._rows = rows
@@ -370,7 +371,7 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         return 2
     settings: Settings | None = None
     if args.url:
-        secrets: list[str | re.Pattern[str]] = [env.get("DORIS_HOST", ""), _IPV4_RE]
+        secrets: list[str | re.Pattern[str]] = [args.url, env.get("DORIS_HOST", ""), _IPV4_RE]
     else:
         try:
             settings = load_settings(env)
@@ -455,7 +456,10 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         emit(f"FAILED: {type(e).__name__}: {e}", err)
         return 2
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception as e:  # noqa: BLE001 - e.g. --url: the session DELETE failed; the result stands
+            emit(f"WARN: close: {type(e).__name__}: {e}", err)
     passed = sum(r.ok for r in results)
     emit(f"{passed}/{len(results)} checks pass")
     return 0 if passed == len(results) else 1
