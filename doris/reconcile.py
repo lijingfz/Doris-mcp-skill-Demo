@@ -264,19 +264,20 @@ def local_metric_names(models_dir: Path | str) -> set[str]:
 class McpBackend:
     """Call the semantic tools the way an agent does, through a fastmcp Client."""
 
-    def __init__(self, client: Any, workspace: str):
-        self.client, self.workspace = client, workspace
+    def __init__(self, client: Any, workspace: str, secrets: Iterable[str] = ()):
+        self.client, self.workspace, self.secrets = client, workspace, list(secrets)
 
     async def _call(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         result = await self.client.call_tool(tool, args, raise_on_error=False)
         text = "".join(getattr(c, "text", "") for c in result.content)
+        # Mask before cutting: a cut secret no longer matches the mask applied when it is printed.
         try:
             body = json.loads(text)
         except ValueError:
-            raise ReconcileError(f"{tool}: non-JSON result: {text[:300]}") from None
+            raise ReconcileError(f"{tool}: non-JSON result: {_mask(text, self.secrets)[:300]}") from None
         if not isinstance(body, dict) or body.get("success") is not True:
             error = body.get("error", body) if isinstance(body, dict) else body
-            raise ReconcileError(f"{tool}: {json.dumps(error, ensure_ascii=False)[:500]}")
+            raise ReconcileError(f"{tool}: {_mask(json.dumps(error, ensure_ascii=False), self.secrets)[:500]}")
         return body
 
     async def metric_names(self) -> set[str]:
@@ -333,7 +334,7 @@ async def _run_mcp(client: Any, models_dir: Path, workspace: str, cases: Sequenc
     expected = local_metric_names(models_dir)
     failed = 0
     async with client:
-        backend = McpBackend(client, workspace)
+        backend = McpBackend(client, workspace, secrets)
         published = await backend.metric_names()
         if published == expected:
             print(f"published metrics: {len(published)} match {models_dir}", file=out)

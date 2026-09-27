@@ -40,7 +40,9 @@ for sid in ${SM_SECRETS:-doris-mcp/mcp_svc doris-mcp/cognito-demo-user}; do
   if ! pw="$(aws secretsmanager get-secret-value --region "${SM_REGION:-us-east-1}" --secret-id "$sid" \
                --query SecretString --output text 2>/dev/null |
              python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])' 2>/dev/null)" || [[ ${#pw} -lt 4 ]]; then
-    echo "WARN: cannot read secret $sid — skipped its exact-value check"
+    # A check that could not run is not a pass: fix the AWS credentials, then re-run.
+    echo "FAIL: cannot read secret $sid — its exact-value check did not run"
+    fail=1
     continue
   fi
   while IFS= read -r f; do

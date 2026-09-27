@@ -51,6 +51,7 @@ EXPECTED_GRANTS: dict[str, dict[str, set[str]]] = {
 }
 EXPECTED_DATABASES = frozenset({"ecom", "system_mcp", "information_schema", "mysql"})
 DENIED_ERRNOS = frozenset({1044, 1142, 1143, 1227})
+DENIED_1105 = ("access denied", "command denied")  # Doris 4.1 refuses privileges with errno 1105 (T2.3)
 _WORKSPACE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")  # upstream workspace/create rule
 _STORE_LOGGER = "doris_new_mcp.store"
 
@@ -98,7 +99,7 @@ def parse_grants(row: Mapping[str, Any]) -> dict[str, dict[str, set[str]]]:
         scopes: dict[str, set[str]] = {}
         for entry in str(value).split(";"):
             obj, sep, privs = entry.strip().rpartition(": ")
-            scopes[obj if sep else "*"] = {p.strip() for p in privs.split(",") if p.strip()}
+            scopes.setdefault(obj if sep else "*", set()).update(p.strip() for p in privs.split(",") if p.strip())
         parsed[column] = scopes
     return parsed
 
@@ -121,15 +122,16 @@ def classify_error(error: pymysql.MySQLError) -> str:
     """'denied' for a privilege error, 'error' for anything else."""
     errno = error.args[0] if error.args else None
     message = str(error.args[1]) if len(error.args) > 1 else ""
-    if errno in DENIED_ERRNOS or (errno == 1105 and "denied" in message.lower()):
+    if errno in DENIED_ERRNOS or (errno == 1105 and any(d in message.lower() for d in DENIED_1105)):
         return "denied"
     return "error"
 
 
-def _brief(error: pymysql.MySQLError) -> str:
+def _brief(error: pymysql.MySQLError, secrets: Iterable[str]) -> str:
+    """errno + message, masked before it is cut (a cut secret no longer matches the mask)."""
     errno = error.args[0] if error.args else "?"
     message = str(error.args[1]) if len(error.args) > 1 else str(error)
-    return f"{errno} {message.replace('errCode = 2, detailMessage = ', '')[:160]}"
+    return f"{errno} {_mask(message.replace('errCode = 2, detailMessage = ', ''), secrets)[:160]}"
 
 
 def _rows(cur: Any, sql: str, params: Sequence[Any] | None = None) -> list[dict[str, Any]]:
@@ -154,13 +156,13 @@ def check_databases(cur: Any) -> Result:
     return Result(not problems, "databases", "; ".join(problems) or ", ".join(sorted(seen)))
 
 
-def check_select(cur: Any, tables: Sequence[str]) -> Result:
+def check_select(cur: Any, tables: Sequence[str], secrets: Iterable[str]) -> Result:
     failed = []
     for table in tables:
         try:
             _rows(cur, f"SELECT 1 FROM {table} LIMIT 1")
         except pymysql.MySQLError as e:
-            failed.append(f"{table}: {_brief(e)}")
+            failed.append(f"{table}: {_brief(e, secrets)}")
     return Result(not failed, "select", "; ".join(failed) or f"{len(tables)} physical tables of the models")
 
 
@@ -177,22 +179,22 @@ def check_semantic_store(cur: Any, workspace: str) -> Result:
                   f"workspace {workspace} semantic_version={rows[0]['semantic_version']}, {files} active files")
 
 
-def max_user_connections(cur: Any) -> str:
+def max_user_connections(cur: Any, secrets: Iterable[str]) -> str:
     try:
         props = {r["Key"]: r["Value"] for r in _rows(cur, "SHOW PROPERTY")}
     except pymysql.MySQLError as e:
-        return f"unavailable ({_brief(e)})"
+        return f"unavailable ({_brief(e, secrets)})"
     return props.get("max_user_connections", "?")
 
 
-def run_probe(cur: Any, probe: Probe) -> Result:
+def run_probe(cur: Any, probe: Probe, secrets: Iterable[str]) -> Result:
     name = f"probe {probe.name}"
     try:
         _rows(cur, probe.sql)
     except pymysql.MySQLError as e:
         if classify_error(e) == "denied":
-            return Result(True, name, f"denied ({_brief(e)})")
-        return Result(False, name, f"inconclusive, expected denied: {_brief(e)}")
+            return Result(True, name, f"denied ({_brief(e, secrets)})")
+        return Result(False, name, f"inconclusive, expected denied: {_brief(e, secrets)}")
     return Result(False, name, "ALLOWED, expected denied")
 
 
@@ -274,15 +276,16 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
             emit(f"connected as {identity}")
             checks: list[tuple[str, Callable[[Any], Result]]] = [
                 ("grants", check_grants), ("databases", check_databases),
-                ("select", lambda c: check_select(c, tables)),
+                ("select", lambda c: check_select(c, tables, secrets)),
                 ("semantic store", lambda c: check_semantic_store(c, args.workspace))]
             for name, check in checks:
                 try:
                     results.append(check(cur))
                 except pymysql.MySQLError as e:
-                    results.append(Result(False, name, _brief(e)))
+                    results.append(Result(False, name, _brief(e, secrets)))
                 emit(_line(results[-1]))
-            emit(f"info  max_user_connections={max_user_connections(cur)}")
+            emit(f"info  max_user_connections={max_user_connections(cur, secrets)}")
+            failed = sum(not r.ok for r in results)
 
             probes = write_probes(identity)
             if env.get("APPLY") != "1":
@@ -291,19 +294,26 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
                      "CREATE DATABASE/TABLE IF NOT EXISTS + metadata SELECT")
                 for probe in probes:
                     emit(f"  {probe.name:<18} expect denied  {probe.sql}   -- {probe.why}")
+            elif failed:
+                # The probes are no-ops only for the account the read-only checks describe.
+                emit(f"SKIPPED probes: {failed} read-only check(s) failed; "
+                     "store_init and the write probes did not run")
             else:
                 try:
                     ok, detail = store_init(settings, args.workspace)
                 except pymysql.MySQLError as e:
-                    ok, detail = False, _brief(e)
+                    ok, detail = False, _brief(e, secrets)
                 results.append(Result(ok, "probe store_init", detail))
                 emit(_line(results[-1]))
                 for probe in probes:
-                    results.append(run_probe(cur, probe))
+                    results.append(run_probe(cur, probe, secrets))
                     emit(_line(results[-1]))
     except pymysql.MySQLError as e:
-        emit(f"FAILED: {_brief(e)}", err)
+        emit(f"FAILED: {_brief(e, secrets)}", err)
         return 1
+    except Exception as e:  # noqa: BLE001 - one masked line instead of a traceback that may name the host
+        emit(f"FAILED: {type(e).__name__}: {e}", err)
+        return 2
     finally:
         conn.close()
     passed = sum(r.ok for r in results)

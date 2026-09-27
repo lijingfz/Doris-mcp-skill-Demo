@@ -49,8 +49,9 @@ DEMO_RO_GRANTS = grants_row(f"internal.ecom: Select_priv; {DEFAULT_DBS}", UserId
 
 
 def denied(action="LOAD"):
+    # Doris 4.1 refuses with errno 1105, not MySQL's 1142 (seen for every T2.3 probe).
     return pymysql.err.OperationalError(
-        1142, f"errCode = 2, detailMessage = {action} command denied to user 'mcp_svc'@'10.0.0.9' for table x")
+        1105, f"errCode = 2, detailMessage = {action} command denied to user 'mcp_svc'@'10.0.0.9' for table 'x'")
 
 
 class FakeCursor:
@@ -139,6 +140,11 @@ class ParseGrants(unittest.TestCase):
         parsed = parse_grants({"GlobalPrivs": "Node_priv,Admin_priv", "Roles": "operator", "TablePrivs": ""})
         self.assertEqual(parsed, {"GlobalPrivs": {"*": {"Node_priv", "Admin_priv"}}, "Roles": {"*": {"operator"}}})
 
+    def test_a_repeated_object_merges_instead_of_hiding_the_first_entry(self):
+        # Overwriting would drop Load_priv here and let grant_problems pass an over-privileged account.
+        parsed = parse_grants({"DatabasePrivs": "internal.ecom: Load_priv; internal.ecom: Select_priv"})
+        self.assertEqual(parsed, {"DatabasePrivs": {"internal.ecom": {"Load_priv", "Select_priv"}}})
+
     def test_non_privilege_columns_are_ignored(self):
         parsed = parse_grants({"UserIdentity": IDENTITY, "Password": "Yes", "Comment": "x", "RequireSan": None})
         self.assertEqual(parsed, {})
@@ -184,6 +190,13 @@ class ClassifyError(unittest.TestCase):
                         "privilege(s) for this operation"):
             with self.subTest(message=message):
                 self.assertEqual(classify_error(pymysql.err.OperationalError(1105, message)), "denied")
+
+    def test_a_1105_needs_access_denied_or_command_denied(self):
+        # errno 1105 is Doris's generic error: "denied" elsewhere in the text is not a privilege refusal.
+        for message in ("errCode = 2, detailMessage = Unknown column 'denied_at' in 'ecom.fact_order'",
+                        "errCode = 2, detailMessage = Permission denied: /opt/doris/fe/doris-meta"):
+            with self.subTest(message=message):
+                self.assertEqual(classify_error(pymysql.err.OperationalError(1105, message)), "error")
 
     def test_other_errors_are_not_denials(self):
         for errno, message in ((1105, "errCode = 2, detailMessage = Unknown table 'mcp_perm_probe'"),
@@ -271,7 +284,7 @@ class DryRun(unittest.TestCase):
         conn = FakeDoris({"SELECT 1 FROM internal.ecom.dim_brand": denied("SELECT")})
         rc, out, _, _, _ = run_main(conn=conn)
         self.assertEqual(rc, 1)
-        self.assertIn("FAIL  select: internal.ecom.dim_brand: 1142", out)
+        self.assertIn("FAIL  select: internal.ecom.dim_brand: 1105 SELECT command denied", out)
 
     def test_missing_metadata_row_fails_with_a_hint(self):
         # Upstream would INSERT the row on first use, which needs LOAD_PRIV: T2.5 must publish first.
@@ -289,14 +302,22 @@ class DryRun(unittest.TestCase):
     def test_a_check_that_errors_is_reported_by_name_and_the_rest_still_run(self):
         rc, out, _, _, _ = run_main(conn=FakeDoris({"SHOW GRANTS": denied("SHOW")}))
         self.assertEqual(rc, 1)
-        self.assertIn("FAIL  grants: 1142", out)
+        self.assertIn("FAIL  grants: 1105 SHOW command denied", out)
         self.assertIn("ok    databases", out)
         self.assertIn("3/4 checks pass", out)
+
+    def test_long_messages_are_masked_before_they_are_cut(self):
+        # Cutting first would keep a prefix of the password that the mask no longer recognises.
+        leak = pymysql.err.OperationalError(1105, "SELECT command denied " + "x" * 130 + PASSWORD)
+        rc, out, err, _, _ = run_main(conn=FakeDoris({"SELECT 1 FROM internal.ecom.dim_brand": leak}))
+        self.assertEqual(rc, 1)
+        self.assertNotIn(PASSWORD[:8], out + err)
+        self.assertIn("x***", out)
 
     def test_show_property_failure_is_only_informational(self):
         rc, out, err, _, _ = run_main(conn=FakeDoris({"SHOW PROPERTY": denied("SHOW")}))
         self.assertEqual(rc, 0, err)
-        self.assertIn("info  max_user_connections=unavailable (1142", out)
+        self.assertIn("info  max_user_connections=unavailable (1105", out)
 
     def test_another_account_is_a_usage_error(self):
         conn = FakeDoris({"SELECT CURRENT_USER()": [{"identity": "'demo_ro'@'%'"}]})
@@ -322,6 +343,14 @@ class DryRun(unittest.TestCase):
         self.assertIs(kwargs["cursorclass"], pymysql.cursors.DictCursor)
         self.assertTrue(kwargs["autocommit"])
 
+    def test_an_unexpected_error_is_one_masked_line_and_exit_2(self):
+        conn = FakeDoris({"SELECT CURRENT_USER()": RuntimeError(f"cursor broke on 10.0.0.1 ({PASSWORD})")})
+        rc, out, err, conn, _ = run_main(conn=conn)
+        self.assertEqual(rc, 2)
+        self.assertEqual(err.strip(), "FAILED: RuntimeError: cursor broke on *** (***)")
+        self.assertNotIn(PASSWORD, out + err)
+        self.assertTrue(conn.closed)
+
     def test_connect_errors_are_masked(self):
         def refuse(**kwargs):
             raise pymysql.err.OperationalError(1045, f"Access denied for 'mcp_svc' on 10.0.0.1 using {PASSWORD}")
@@ -341,11 +370,23 @@ class Apply(unittest.TestCase):
         probes = write_probes(IDENTITY)
         for probe in probes:
             self.assertEqual(conn.executed.count(probe.sql), 1, probe.sql)
-            self.assertIn(f"ok    probe {probe.name}: denied (1142", out)
+            self.assertIn(f"ok    probe {probe.name}: denied (1105 LOAD command denied", out)
         self.assertIn("ok    probe store_init: discover_workspaces -> ecom", out)
         total = 4 + 1 + len(probes)
         self.assertIn(f"{total}/{total} checks pass", out)
         self.assertNotIn("DRY-RUN", out)
+
+    def test_a_failed_read_only_check_skips_store_init_and_the_probes(self):
+        # A wrong account (e.g. with LOAD_PRIV) must not get its writes tried: the probes are no-ops only
+        # when the read-only checks hold.
+        row = grants_row(f"internal.ecom: Select_priv,Load_priv; {DEFAULT_DBS}; "
+                         "internal.system_mcp: Select_priv,Create_priv")
+        rc, out, _, conn, seen = run_main(conn=FakeDoris({"SHOW GRANTS": [row]}), apply=True)
+        self.assertEqual(rc, 1)
+        self.assertEqual(seen["store_init"], [])
+        self.assertEqual({s.split()[0] for s in conn.executed}, {"SELECT", "SHOW"})
+        self.assertIn("SKIPPED probes: 1 read-only check(s) failed; store_init and the write probes did not run", out)
+        self.assertIn("3/4 checks pass", out)
 
     def test_an_allowed_write_fails(self):
         conn = FakeDoris({"INSERT INTO ecom.dim_brand": []})

@@ -269,6 +269,19 @@ class Mcp(unittest.TestCase):
         with self.assertRaisesRegex(ReconcileError, "non-JSON"):
             asyncio.run(McpBackend(client, "ecom").query(MONEY))
 
+    def test_long_errors_are_masked_before_they_are_cut(self):
+        # Cutting first would keep a prefix of the password that the mask no longer recognises.
+        # The password starts 10 characters before the cut (300 / 500 characters).
+        cases = {"non-JSON": "Error calling tool: " + "x" * 270 + PASSWORD,
+                 "tool error": {"success": False, "error": {"code": "QUERY_ERROR", "message": "x" * 454 + PASSWORD}}}
+        for name, body in cases.items():
+            with self.subTest(name):
+                backend = McpBackend(FakeClient({"query_metric": body}), "ecom", secrets=[PASSWORD])
+                with self.assertRaises(ReconcileError) as caught:
+                    asyncio.run(backend.query(MONEY))
+                self.assertNotIn(PASSWORD[:8], str(caught.exception))
+                self.assertIn("x***", str(caught.exception))
+
     def test_metric_names_reads_one_full_page(self):
         client = FakeClient({"list_metrics": ok([{"name": "gmv", "description": "d"}], {"total_count": 1})})
         self.assertEqual(asyncio.run(McpBackend(client, "ecom").metric_names()), {"gmv"})

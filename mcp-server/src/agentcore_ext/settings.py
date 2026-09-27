@@ -82,7 +82,12 @@ def load_settings(env: Mapping[str, str] | None = None, secrets_client: Any = No
 
     secret_id = (env.get("DORIS_SECRET_ID") or "").strip()
     if secret_id:
-        user, password = _credentials_from_secret(secret_id, secrets_client or _secrets_client(env))
+        if secrets_client is None:
+            try:
+                secrets_client = _secrets_client(env)
+            except Exception as e:  # noqa: BLE001 - e.g. NoRegionError; only the type, like a read failure
+                raise SettingsError(f"cannot read secret {secret_id}: {type(e).__name__}") from None
+        user, password = _credentials_from_secret(secret_id, secrets_client)
     else:
         user, password = env.get("DORIS_USER") or "", env.get("DORIS_PASSWORD")
         if not user or password is None:

@@ -5,11 +5,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _SRC = Path(__file__).resolve().parent.parent / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from agentcore_ext import settings as settings_module  # noqa: E402
 from agentcore_ext.settings import SettingsError, load_settings  # noqa: E402
 
 PW = "env-s3cret"
@@ -114,6 +116,18 @@ class TestSettingsErrors(unittest.TestCase):
         client = FakeSecrets(error=TimeoutError(f"endpoint timeout, password={SECRET_PW}"))
         with self.assertRaises(SettingsError) as ctx:
             load_settings(env, secrets_client=client)
+        self.assertIsNone(ctx.exception.__cause__)
+        self.assertTrue(ctx.exception.__suppress_context__)
+
+    def test_secrets_client_setup_failure_is_a_settings_error(self):
+        # boto3 client construction (e.g. botocore.exceptions.NoRegionError) must reach main()'s
+        # `except SettingsError` (exit 2), not escape as a traceback.
+        env = {**BASE, "DORIS_SECRET_ID": "doris-mcp/mcp_svc"}
+        boom = RuntimeError(f"cannot build client, password={SECRET_PW}")
+        with mock.patch.object(settings_module, "_secrets_client", side_effect=boom):
+            with self.assertRaises(SettingsError) as ctx:
+                load_settings(env)
+        self.assertEqual(str(ctx.exception), "cannot read secret doris-mcp/mcp_svc: RuntimeError")
         self.assertIsNone(ctx.exception.__cause__)
         self.assertTrue(ctx.exception.__suppress_context__)
 

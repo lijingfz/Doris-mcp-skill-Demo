@@ -7,12 +7,16 @@ set -uo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/check-secrets.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 FAKE_PW="SmPw0123456789abcdefXYZ"
+FAKE_PW2="CgPw0123456789abcdefXYZ"
 mkdir -p "$TMP/bin" "$TMP/repo/scripts"
 cat > "$TMP/bin/aws" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FAKE_LOG"
-if [[ "$1 $2" == "secretsmanager get-secret-value" && "$FAKE_SM" == "readable" && "$*" == *doris-mcp/mcp_svc* ]]; then
-  printf '{"username":"mcp_svc","password":"%s"}\n' "$FAKE_PW"; exit 0
+if [[ "$1 $2" == "secretsmanager get-secret-value" && "$FAKE_SM" == "readable" ]]; then
+  case "$*" in
+    *doris-mcp/mcp_svc*) printf '{"username":"mcp_svc","password":"%s"}\n' "$FAKE_PW"; exit 0 ;;
+    *doris-mcp/cognito-demo-user*) printf '{"username":"demo","password":"%s"}\n' "$FAKE_PW2"; exit 0 ;;
+  esac
 fi
 echo "An error occurred (ResourceNotFoundException) when calling the GetSecretValue operation" >&2; exit 254
 FAKE
@@ -28,7 +32,7 @@ check() { # NAME EXPECTED ACTUAL
 run_check() { # FAKE_SM → sets RC, OUT
   : > "$TMP/aws.log"
   # AWS_REGION points elsewhere, like a shell whose default profile is in another region.
-  OUT="$(cd "$TMP/repo" && PATH="$TMP/bin:$PATH" FAKE_LOG="$TMP/aws.log" FAKE_PW="$FAKE_PW" FAKE_SM="$1" \
+  OUT="$(cd "$TMP/repo" && PATH="$TMP/bin:$PATH" FAKE_LOG="$TMP/aws.log" FAKE_PW="$FAKE_PW" FAKE_PW2="$FAKE_PW2" FAKE_SM="$1" \
     AWS_REGION=eu-west-1 AWS_DEFAULT_REGION=eu-west-1 CRED_FILE="$TMP/no-such-file" bash scripts/check-secrets.sh 2>&1)"
   RC=$?
 }
@@ -47,9 +51,17 @@ check "names the secret and the file" yes "$(has "$OUT" "LEAK: password of secre
 check "never prints the password" no "$(has "$OUT" "$FAKE_PW")"
 check "password never in any aws argv" no "$(has "$(cat "$TMP/aws.log")" "$FAKE_PW")"
 
+printf 'demo login: %s\n' "$FAKE_PW2" > "$TMP/repo/leaky.log.txt"
+run_check readable
+check "leaked password of the second secret fails the check" "1|yes" \
+  "$RC|$(has "$OUT" "LEAK: password of secret doris-mcp/cognito-demo-user found in leaky.log.txt")"
+rm "$TMP/repo/leaky.log.txt"
+
+# An exact-value check that could not run is not a pass (P2 whole review M4).
 run_check unreadable
-check "unreadable secrets are skipped with a warning, not a failure" 0 "$RC"
-check "warning names the secret" yes "$(has "$OUT" "WARN: cannot read secret doris-mcp/mcp_svc")"
+check "unreadable secrets fail the check" 1 "$RC"
+check "the failure names the secret" yes "$(has "$OUT" "FAIL: cannot read secret doris-mcp/mcp_svc")"
+check "the last line says FAILED" "check-secrets: FAILED — do not commit" "$(tail -n 1 <<<"$OUT")"
 
 if [[ "$FAILS" -gt 0 ]]; then echo "$FAILS failed"; exit 1; fi
 echo "all passed"

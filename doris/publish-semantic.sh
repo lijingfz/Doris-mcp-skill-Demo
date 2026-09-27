@@ -5,6 +5,8 @@
 # credentials.env is sourced in a subshell; only host/port, the admin user and (APPLY=1 only) the admin
 # password are exported, under new names, to the python process.
 set -euo pipefail
+# `source` keeps the export attribute of variables the caller already exported: drop them first.
+unset "${!DORIS_ROOT_@}" "${!DORIS_RO_@}" DORIS_ADMIN_PASSWORD
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CRED="${DORIS_CRED_FILE:-/home/ubuntu/AI-code/Doris-test/credentials.env}"
 PY="${PYTHON_BIN:-$ROOT/.venv/bin/python}"
