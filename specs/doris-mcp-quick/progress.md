@@ -5,11 +5,11 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P2 执行中（Subagent-driven，implementer / reviewer 全部用 Opus 5.5；计划 `plans/P2-doris.md` 已通过用户 review）。P0、P1 已完成并本地合并到 `main`
-- **进行中**：T2.1（Step 1 在新分支 `p2-doris` 上提交 spec 修订 —— tasks.md P2 段、design v0.4、requirements v1.3、本文件 —— 和计划）
-- **下一步**：T2.1 → T2.4 → T2.5 → T2.2 → T2.3 → T2.6 → T2.7；4 个 GATE（T2.1 建 secret、T2.5 root 发布、T2.2 root 建 `mcp_svc` 并授权、T2.3 以 `mcp_svc` 写探针）每次都先给用户看 dry-run，确认后才 `APPLY=1`。T2.7 = P1 整体评审 ①–④ + P0 评审 M-2、M-8（纯离线）；P0 评审 M-1 / M-3 / M-4 已写进 T4.1 / T4.4 / T3.4，M-5、M-6、M-7、M-9 不做
+- **进行中**：无（分支 `p2-doris`；T2.1 已完成，T2.4 尚未开始）
+- **下一步**：T2.4（`doris/semantic/ecom/*.yaml` + `doris/reconcile.py`，`demo_ro` 只读跑 `direct` 11/11）。执行顺序 T2.1 ✅ → T2.4 → T2.5 → T2.2 → T2.3 → T2.6 → T2.7；4 个 GATE（T2.1 建 secret —— 已完成、T2.5 root 发布、T2.2 root 建 `mcp_svc` 并授权、T2.3 以 `mcp_svc` 写探针）每次都先给用户看 dry-run，确认后才 `APPLY=1`。T2.7 = P1 整体评审 ①–④ + P0 评审 M-2、M-8（纯离线）；P0 评审 M-1 / M-3 / M-4 已写进 T4.1 / T4.4 / T3.4，M-5、M-6、M-7、M-9 不做
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
-- **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
+- **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
 - **Doris 变更**：无（spec 阶段只用 `demo_ro` 做过只读查询）
 
 ## 日志
@@ -187,3 +187,12 @@
 - 计划新增 T2.7（9 步，纯离线）：`get_query_profile` 输出的 profile 文本按 SQL 预览同样 mask；`build_server` 失败时只写一行 mask 过的日志并 `exit 2`；读 secret 失败不再链出原始异常；新增非默认端口一路传到集群配置和 FE URL 的测试。新增 5 个测试，agentcore 测试共 82 个。所有代码块在临时副本里走完 RED → GREEN 和变异检查，与计划逐块一致。
 - tasks.md：新增 T2.7 行；T3.4、T4.1、T4.4 分别补上 M-4、M-1、M-3。
 - 执行方式：Subagent-driven（superpowers:subagent-driven-development），每个任务一个 implementer + 一个 task reviewer，最后做整体评审，全部指定 Opus 5.5。GATE 步骤由 implementer 停下来报告 dry-run，经用户逐次确认后才 `APPLY=1`。
+
+### 2026-09-27 T2.1 Secrets Manager `doris-mcp/mcp_svc` + check-secrets 块 1b [GATE]
+- Step 1：前置条件与计划一致（`main` 上恰好 5 行改动；账号 `890717383483`；Python 3.12.3；credentials.env 可读；check-secrets OK 665 个文件）。新建分支 `p2-doris`，提交计划和 spec 修订（`f2d6a60`）。
+- TDD：`infra/test/test-40-doris-secret.sh` 先红（脚本不存在，exit 127，`13 failed`），写 `infra/40-doris-secret.sh` 后 23/23 通过；`infra/test/test-lib.sh` 仍全部通过。`scripts/test/test-check-secrets.sh` 先红（与计划列出的 6 项 FAIL 一致，`6 failed`），在 `scripts/check-secrets.sh` 插入块 1b（+16 行）后 10/10 通过。4 个文件与计划逐字一致。
+- 块 1b 首次扫描真实仓库：只有 `WARN: cannot read secret doris-mcp/mcp_svc`（当时还没建；`doris-mcp/cognito-demo-user` 能读到），`check-secrets: OK (668 files scanned)`。
+- dry-run：`describe-secret` 返回 ResourceNotFound，输出与计划一致（`get-random-password` 与 `create-secret --secret-string file://<0600 temp file…>` 两条 DRY-RUN），`state.env` 无变化。
+- **用户确认 → 00:45 UTC `APPLY=1 bash infra/40-doris-secret.sh`**（由主会话执行）：`secret doris-mcp/mcp_svc created`，state.env 新增 `DORIS_SECRET_ARN`（后缀 `RIUdT2`），`done (APPLY=1)`。
+- Step 12 只读验证：secret 内容只打印了用户名 / 长度 / 是否全是字母数字 → `mcp_svc 32 True`；state.env 有 `DORIS_SECRET_ARN=arn:aws:secretsmanager:us-east-1:890717383483:secret:doris-mcp/mcp_svc-RIUdT2`；重跑 dry-run → `secret exists: doris-mcp/mcp_svc (left unchanged)`、`done (APPLY=0)`（不会再生成密码）；check-secrets 不再有 WARN，两个 Secrets Manager 密码都参与精确值扫描，`check-secrets: OK (668 files scanned)`。
+- 密码没有出现在命令行参数、日志或对话输出里（只经过一个 0600 临时文件，用完即删）。回滚（需 GATE）：`aws secretsmanager delete-secret --region us-east-1 --secret-id doris-mcp/mcp_svc --recovery-window-in-days 7`。

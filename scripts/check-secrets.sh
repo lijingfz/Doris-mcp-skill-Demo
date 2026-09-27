@@ -34,6 +34,22 @@ else
   echo "WARN: $CRED_FILE not readable — skipped exact-value check"
 fi
 
+# 1b) Passwords held only in Secrets Manager (created by infra/*.sh, always in us-east-1). The value
+#     stays in a shell variable and reaches grep through a process substitution — never argv, never printed.
+for sid in ${SM_SECRETS:-doris-mcp/mcp_svc doris-mcp/cognito-demo-user}; do
+  if ! pw="$(aws secretsmanager get-secret-value --region "${SM_REGION:-us-east-1}" --secret-id "$sid" \
+               --query SecretString --output text 2>/dev/null |
+             python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])' 2>/dev/null)" || [[ ${#pw} -lt 4 ]]; then
+    echo "WARN: cannot read secret $sid — skipped its exact-value check"
+    continue
+  fi
+  while IFS= read -r f; do
+    echo "LEAK: password of secret $sid found in $f"
+    fail=1
+  done < <(grep -lIF -f <(printf '%s\n' "$pw") -- "${files[@]}" 2>/dev/null)
+done
+unset pw
+
 # 2) Generic patterns: AWS access keys, private keys, inline passwords.
 #    Placeholders such as IDENTIFIED BY '<password>' or '${DORIS_RO_PASSWORD}' are not secrets.
 patterns='AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|aws_secret_access_key[[:space:]]*=|IDENTIFIED BY '"'"'[^<$'"'"'][^<'"'"']{3,}'"'"
