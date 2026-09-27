@@ -54,13 +54,18 @@
 
 ## P3 AgentCore 部署（计划：`plans/P3-deploy.md`）
 
-| ✓ | ID | 标签 | 任务 | 需求 |
-|---|---|---|---|---|
-| [ ] | T3.1 | [AI+GATE] | Runtime 执行角色追加 `secretsmanager:GetSecretValue`（只限 `doris-mcp/mcp_svc`）；同时收紧 CDK 默认角色的通配权限（`foundation-model/*`、`xray`/`logs` 的 `*`），走 `agentcore.json` 的 `executionRoleArn` 或 `additionalPolicies`，不在 CDK 之外改角色，`scripts/render-agentcore.py` 同步（design §7、§14）| R-31, R-41 |
-| [ ] | T3.2 | [AI+GATE] | `agentcore.json`：codeLocation 改为 `../mcp-server/`，envVars 加 `DORIS_SECRET_ID`、`PROFILE_SCOPE`，重新部署；deploy 前确认 `~/.agentcore/config.json` 有 `"disableTransactionSearch": true`，否则 deploy 会改账号级 X-Ray 设置（design §13）| R-30 |
-| [ ] | T3.3 | [AI] | SigV4 直连冒烟（12 个工具 + flow）；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s | R-12, R-32 |
-| [ ] | T3.4 | [AI+GATE] | `synchronize-gateway-targets`；Gateway token 冒烟（`doris___*` 共 12 个）；经 Gateway 每次调用都是冷启动，逐次记录耗时，至少含 `check_service_health` 和一个语义工具（`query_metric`）（design §13）；测耗时的探针脚本收进仓库，可重复运行（P0 评审 M-4：P0 的会话 / 冷启动探针只在 `/tmp`）| R-10 |
-| [ ] | T3.5 | [AI+GATE] | `mcp_svc` host 收紧为 `'172.31.%'`（D6），复测 | R-42 |
+目标：把 Runtime `dorismcp` 从 P0 的 spike 换成完整的 `mcp-server/`（12 个工具，以 `mcp_svc` 经 Secrets Manager 连 Doris 私网地址），执行角色换成只能写自己的日志、只能读 `doris-mcp/mcp_svc` 的专用角色；经 SigV4 直连和 Gateway 分别冒烟、测耗时和并发、核对审计日志；最后把 `mcp_svc` 的 host 收紧为 `'172.31.%'`。
+全部代码已在 spec 阶段起草并验证（最终 `doris/test` 151 个、`scripts/test` 53 个、`test_agentcore_*.py` 89 个 + 6 组 shell 测试通过），并在 `178be68` 的干净 worktree 上按计划顺序回放过，完整代码嵌在 `plans/P3-deploy.md`。4 个 GATE（建 IAM 角色、deploy、同步 Gateway target、迁移 `mcp_svc` 的 host）在 spec 阶段都没有执行；只读预验证见计划的 Architecture。
+执行顺序 T3.0 → T3.1 → T3.2 → T3.3 → T3.4 → T3.5：T3.0 是 P2 整体评审的遗留小修和补丁 P-09，必须在第一次 deploy 之前完成。T3.5 之后开发机不能再以 `mcp_svc` 登录（1045，预期行为）。
+
+| ✓ | ID | 标签 | 任务 | 需求 | 计划 |
+|---|---|---|---|---|---|
+| [ ] | T3.0 | [AI] | P2 整体评审遗留 M1–M4：两个 wrapper 先 `unset` 调用方 export 的 root / ro 变量；`permission_matrix.py` 只读检查失败时跳过探针、1105 要含 access / command denied、先 mask 再截断、重复对象合并、兜底 `except`；Secrets Manager client 构造失败也是 `SettingsError`；`check-secrets.sh` 读不到 secret 时失败。补丁 P-09：池连接 `SET wait_timeout = 600`（design §5.2、§13）| R-30, R-31, R-42, R-43 | P3 §T3.0 |
+| [ ] | T3.1 | [AI+GATE] | `infra/35-runtime-role.sh` 建专用执行角色 `doris-mcp-runtime-role`：只能写 `runtimes/dorismcp_dorismcp-*` 日志组，只能 `GetSecretValue` `DORIS_SECRET_ARN` 这一个 secret；`scripts/render-agentcore.py --phase server` 把它写进 `agentcore.json` 的 `executionRoleArn`（CDK 导入它，不再生成角色、不附加策略；不在 CDK 之外改角色）（design §7、§14）| R-31, R-41 | P3 §T3.1 |
+| [ ] | T3.2 | [AI+GATE] | `agentcore.json`：codeLocation 改为 `../mcp-server/`，envVars 加 `DORIS_SECRET_ID`、`PROFILE_SCOPE`，执行角色换成 T3.1 的角色，重新部署（删除 CDK 角色，Runtime 原地更新，`RUNTIME_ARN` 不变）；锁定 `caio`、`platformdirs`，CodeZip 与 `.venv` 的 88 个 dist 一致；deploy 前确认 `~/.agentcore/config.json` 有 `"disableTransactionSearch": true`，否则 deploy 会改账号级 X-Ray 设置（design §13）| R-30 | P3 §T3.2 |
+| [ ] | T3.3 | [AI] | SigV4 直连冒烟（12 个工具 + flow）；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s（共享 session 和每次新 session 逐次测）；`reconcile.py mcp --url` 11/11；Doris 连接来源都在 `172.31.` | R-12, R-32 | P3 §T3.3 |
+| [ ] | T3.4 | [AI+GATE] | `synchronize-gateway-targets`；Gateway token 冒烟（`doris___*` 共 12 个）；经 Gateway 每次调用都是冷启动，逐次记录耗时（12 个工具，含 `check_service_health` 和语义工具）并跑 20 个并发（design §13）；测耗时的探针脚本收进仓库，可重复运行（P0 评审 M-4：`mcp_smoke.py time` + `scripts/smoke_calls.json`）；残留连接 600 s 后被回收（P-09）；Gateway DEBUG 泄漏检查（design §14）| R-10, R-12 | P3 §T3.4 |
+| [ ] | T3.5 | [AI+GATE] | `mcp_svc` host 收紧为 `'172.31.%'`（D6）：`doris/02_mcp_user_vpc.sql` 先建新身份并授权，最后 `DROP USER IF EXISTS 'mcp_svc'@'%'`；经 Runtime 复核权限 5/5、对账 11/11，开发机登录得到 1045；R-40 只读复核；用户侧检查 FE 审计日志里有没有明文密码（只输出计数）| R-42, R-40 | P3 §T3.5 |
 
 ## P4 Quick 桌面版（计划：`plans/P4-quick.md`）
 

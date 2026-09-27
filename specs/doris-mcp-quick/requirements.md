@@ -1,6 +1,7 @@
 # 需求：Doris MCP on AgentCore × Amazon Quick 桌面版
 
-> 版本 v1.3 · 2026-09-26 · 来源：`prepare/` 下 4 份材料 + 用户确认的决策（见文末）
+> 版本 v1.4 · 2026-09-27 · 来源：`prepare/` 下 4 份材料 + 用户确认的决策（见文末）
+> v1.4：R-32 补充说明审计记录的范围：只有执行到工具函数（`log_tool_call`）的调用才有审计记录，在此之前就失败的请求没有记录（见 design v0.5 §13、`plans/P3-deploy.md` T3.3）
 > v1.3：R-26 验收细化为 11 个故事线对账用例、到分一致；R-42 验收接受 Doris 给每个用户默认列出的权限项，并写明写探针（见 design v0.4 §6.1、§6.3）
 > v1.2：R-11（Local stdio 备份路径）按 D9 取消，备份路径改为 Service auth（R-13），R-13 的验收同步加严
 > v1.1：R-23 的 summary 裁剪规则按真实 profile 实测加严（另外删除全 0 计数器、折叠逐列统计；见 design v0.2.2），并补充 api_text 的命中条件
@@ -33,7 +34,7 @@
 |---|---|---|
 | R-30 | THE SYSTEM SHALL 以 CodeZip / PYTHON_3_12 / protocol MCP / authorizer AWS_IAM / VPC 模式运行，监听 `0.0.0.0:8000/mcp`（stateless streamable HTTP），并提供 `GET /ping`。 | `agentcore status` 显示 READY；SigV4 冒烟通过 |
 | R-31 | THE SYSTEM SHALL 在启动时从 Secrets Manager（`DORIS_SECRET_ID`）读取 Doris 服务账号；只有未设置 `DORIS_SECRET_ID` 时才读 `DORIS_PASSWORD`（仅本地开发用）。 | `agentcore.json` 和 git 历史里没有明文密码；单测覆盖两种来源 |
-| R-32 | THE SYSTEM SHALL 把服务日志和审计日志（`doris_new_mcp.audit`）写到 stderr，从而进入 CloudWatch Logs。 | P3：CloudWatch 能看到每次工具调用的审计记录 |
+| R-32 | THE SYSTEM SHALL 把服务日志和审计日志（`doris_new_mcp.audit`）写到 stderr，从而进入 CloudWatch Logs。 | P3：CloudWatch 能看到每次工具调用的审计记录。v1.4 说明：审计记录由工具函数里的 `log_tool_call` 写出，所以请求在工具函数之前就失败时（例如 MCP 协议错误、参数校验失败、连接池拿不到连接、语义层重新加载期间返回的 `SERVICE_NOT_READY`）没有审计记录；P3 只验收执行到工具函数的调用。是否在 P5 补上这类记录由用户决定 |
 | R-33 | THE SYSTEM SHALL 把 workspace 目录放在可写路径（默认 `$TMPDIR/doris-mcp-workspace`，可用 `DORIS_MCP_WORKSPACE_DIR` 覆盖），因为 `/var/task` 只读。 | 单测：自定义目录下会创建 `workspaces/` 和 `logs/` |
 | R-34 | THE SYSTEM SHALL 把 SQL 超时设为 50 s、FE HTTP 超时设为 15 s，保证不超过 Quick 的 60 s 上限。 | 配置文件 + 单测 |
 | R-35 | THE SYSTEM SHALL 使用单一 Doris 服务账号 `mcp_svc` 访问 Doris（SQL 与 FE HTTP 都用它），入站鉴权交给 Runtime IAM / Gateway JWT。 | 单测：service 模式下所有连接池都用服务账号 |
