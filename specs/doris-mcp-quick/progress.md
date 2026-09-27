@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P2 完成（分支 `p2-doris`，T2.1–T2.7 已全部提交，`plans/P2-doris.md` 的「P2 完成标准」已全部勾选）；P2 整体评审（opus）已完成，结论 With fixes（0 Critical / 1 Important / 4 Minor），I1 已修复并重新发布（`ecom` semantic_version 3，`reconcile.py mcp` 11/11）；等待用户决定合并方式（Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。P0、P1 已完成并本地合并到 `main`
+- **阶段**：P2 完成并本地合并到 `main`（用户 2026-09-27 选择本地合并，快进到 `7e957b8`，分支 `p2-doris` 已删除；T2.1–T2.7 已全部提交，`plans/P2-doris.md` 的「P2 完成标准」已全部勾选）；P2 整体评审（opus）已完成，结论 With fixes（0 Critical / 1 Important / 4 Minor），I1 已修复并重新发布（`ecom` semantic_version 3，`reconcile.py mcp` 11/11）（Subagent-driven，implementer / reviewer 全部用 Opus 5.5）。P0、P1、P2 已完成并本地合并到 `main`
 - **进行中**：无
-- **下一步**：用户决定合并方式（D8，不 push）；然后编写 `plans/P3-deploy.md`（P2 整体评审的遗留事项 M1–M4、T3.5、P3、FE audit log 见日志「P2 整体评审（opus）」）。P1 / P0 整体评审小修已在 T2.7 完成（P1 ①–④、P0 M-2 / M-8）；P0 评审 M-1、M-3、M-4 在 T4.1、T4.4、T3.4，M-5、M-6、M-7、M-9 不做。R-26 验收证据见 T2.6（`mcp_svc` 经进程内 MCP server：已发布 22 个指标与本地一致，`query_metric` 与故事线 SQL 11/11 到分一致）
+- **下一步**：编写 `plans/P3-deploy.md`（是否 push 仍由用户决定，D8）（P2 整体评审的遗留事项 M1–M4、T3.5、P3、FE audit log 见日志「P2 整体评审（opus）」）。P1 / P0 整体评审小修已在 T2.7 完成（P1 ①–④、P0 M-2 / M-8）；P0 评审 M-1、M-3、M-4 在 T4.1、T4.4、T3.4，M-5、M-6、M-7、M-9 不做。R-26 验收证据见 T2.6（`mcp_svc` 经进程内 MCP server：已发布 22 个指标与本地一致，`query_metric` 与故事线 SQL 11/11 到分一致）
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
@@ -284,3 +284,8 @@
 - 以 `mcp_svc` 重跑 `reconcile.py mcp`（同 T2.6 Step 1，经过滤器），exit 0：`published metrics: 22 match …/doris/semantic/ecom`，11 个用例全部 `ok`（行数与 T2.6 相同），`11/11 cases match`。
 - 复审（opus）：I1 已解决，修复没有引入 Critical / Important；两处文档小问题（design 头部状态、semantic.py 行号差一）记为延后，头部状态已在本次更新。
 - Doris 变更：`ecom` semantic_version 2 → 3（只改 `metrics.yaml` 的两段 description）；没有创建或修改 AWS 资源。
+
+### 2026-09-27 P2 本地合并
+- 用户选择「本地合并回 main」→ `git merge --ff-only p2-doris`（main 从 `3c55f23` 快进到 `7e957b8`，13 个提交），删除分支 `p2-doris`；没有 push（D8）。
+- 合并后在 `main` 上跑全部离线测试：`doris/test` `Ran 119 tests` / `OK`；5 组 shell 测试均 `all passed`；`test_agentcore_*.py` `Ran 82 tests` / `OK`；upstream 离线测试 `🎉 All tests passed!`。
+- push 前需要用户知悉（D8）：`prepare/Doris电商演示-部署与故事线.md` 含 Doris 主机地址（b5114b2 引入，`prepare/` 不能改）；所有提交的作者 / 提交者邮箱含开发机内网 IP；FE 审计日志可能明文记录 `mcp_svc` 的密码（见「P2 整体评审（opus）」的 FE audit log 一条）。
