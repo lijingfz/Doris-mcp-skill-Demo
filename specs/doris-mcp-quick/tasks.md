@@ -66,7 +66,7 @@
 | [x] | T3.3 | [AI] | SigV4 直连冒烟（12 个工具 + flow）；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s（共享 session 和每次新 session 逐次测）；`reconcile.py mcp --url` 11/11；Doris 连接来源都在 `172.31.` | R-12, R-32 | P3 §T3.3 |
 | [x] | T3.4 | [AI+GATE] | `synchronize-gateway-targets`；Gateway token 冒烟（`doris___*` 共 12 个）；经 Gateway 每次调用都是冷启动，逐次记录耗时（12 个工具，含 `check_service_health` 和语义工具）并跑 20 个并发（design §13）；测耗时的探针脚本收进仓库，可重复运行（P0 评审 M-4：`mcp_smoke.py time` + `scripts/smoke_calls.json`）；残留连接 600 s 后被回收（P-09）；Gateway DEBUG 泄漏检查（design §14）| R-10, R-12 | P3 §T3.4 |
 | [x] | T3.5 | [AI+GATE] | `mcp_svc` host 收紧为 `'172.31.%'`（D6）：`doris/02_mcp_user_vpc.sql` 先建新身份并授权，最后 `DROP USER IF EXISTS 'mcp_svc'@'%'`；经 Runtime 复核权限 5/5、对账 11/11，开发机登录得到 1045；R-40 只读复核；用户侧检查 FE 审计日志里有没有明文密码（只输出计数）| R-42, R-40 | P3 §T3.5 |
-| [ ] | T3.6 | [AI] | P3 整体评审之后补充：关闭 T3.5 遗留的 7 个 minor。`admin_sql` 的 DROP 必须放在最后，`render()` 也检查 DROP 规则；`permission_matrix --url` mask Runtime URL；`conn.close()` 失败时只输出一行 mask 过的 WARN，结果不变；测试 fixture 换成 TEST-NET 地址；测试清理 `sys.path`；`RuntimeCursor` 遇到不是 dict 的 `data` 也按 `no rows` 处理；更正 T3.5 日志的只读调用清单；用户侧补充 FE 审计日志 `IDENTIFIED BY` 的条数（只输出计数）| R-42（评审项）| P3 §T3.6 |
+| [x] | T3.6 | [AI] | P3 整体评审之后补充：关闭 T3.5 遗留的 7 个 minor。`admin_sql` 的 DROP 必须放在最后，`render()` 也检查 DROP 规则；`permission_matrix --url` mask Runtime URL；`conn.close()` 失败时只输出一行 mask 过的 WARN，结果不变；测试 fixture 换成 TEST-NET 地址；测试清理 `sys.path`；`RuntimeCursor` 遇到不是 dict 的 `data` 也按 `no rows` 处理；更正 T3.5 日志的只读调用清单；用户侧补充 FE 审计日志 `IDENTIFIED BY` 的条数（只输出计数）| R-42（评审项）| P3 §T3.6 |
 
 ## P4 Quick 桌面版（计划：`plans/P4-quick.md`）
 
