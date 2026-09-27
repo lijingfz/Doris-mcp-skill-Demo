@@ -8,7 +8,8 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 SECRET_ARN="arn:aws:secretsmanager:us-east-1:111122223333:secret:doris-mcp/mcp_svc-AbCdEf"
 ROLE_ARN="arn:aws:iam::111122223333:role/doris-mcp-runtime-role"
 mkdir -p "$TMP/bin"
-# Fake AWS CLI. FAKE_ROLE = missing | exists | denied. file:// documents are copied to $FAKE_DIR.
+# Fake AWS CLI. FAKE_ROLE = missing | exists | warn | foreign | denied | badcreate.
+# file:// documents are copied to $FAKE_DIR.
 cat > "$TMP/bin/aws" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FAKE_LOG"
@@ -16,11 +17,17 @@ doc() { for a in "$@"; do [[ "$a" == file://* ]] && cat "${a#file://}"; done; }
 case "$1 $2" in
   "iam get-role")
     case "$FAKE_ROLE" in
-      exists) echo "arn:aws:iam::111122223333:role/doris-mcp-runtime-role" ;;
-      denied) echo "An error occurred (AccessDenied) when calling the GetRole operation" >&2; exit 254 ;;
-      *)      echo "An error occurred (NoSuchEntity) when calling the GetRole operation: The role with name doris-mcp-runtime-role cannot be found." >&2; exit 254 ;;
+      exists)  echo "arn:aws:iam::111122223333:role/doris-mcp-runtime-role" ;;
+      warn)    echo "warning: this CLI version is deprecated" >&2
+               echo "arn:aws:iam::111122223333:role/doris-mcp-runtime-role" ;;
+      foreign) echo "arn:aws:iam::999999999999:role/doris-mcp-runtime-role" ;;
+      denied)  echo "An error occurred (AccessDenied) when calling the GetRole operation" >&2; exit 254 ;;
+      *)       echo "An error occurred (NoSuchEntity) when calling the GetRole operation: The role with name doris-mcp-runtime-role cannot be found." >&2; exit 254 ;;
     esac ;;
-  "iam create-role") doc "$@" > "$FAKE_DIR/trust.json"; echo "arn:aws:iam::111122223333:role/doris-mcp-runtime-role" ;;
+  "iam create-role")
+    doc "$@" > "$FAKE_DIR/trust.json"
+    if [[ "$FAKE_ROLE" == badcreate ]]; then echo "arn:aws:iam::111122223333:role/other-role"
+    else echo "arn:aws:iam::111122223333:role/doris-mcp-runtime-role"; fi ;;
   "iam put-role-policy") doc "$@" > "$FAKE_DIR/policy.json" ;;
   *) echo "fake aws: unexpected call: $*" >&2; exit 99 ;;
 esac
@@ -112,8 +119,14 @@ check "apply/no secret ARN: says to finish T2.1" yes "$(has "$OUT" "DORIS_SECRET
 check "apply/no secret ARN: no create-role" no "$(has "$LOG" "create-role")"
 
 run_script missing 1 "*"
-check "apply/wildcard secret ARN: fails" 1 "$RC"
-check "apply/wildcard secret ARN: no IAM write" 0 "$(grep -cE 'create-role|put-role-policy' <<<"$LOG")"
+check "apply/bare * secret ARN: fails" 1 "$RC"
+check "apply/bare * secret ARN: no IAM write" 0 "$(grep -cE 'create-role|put-role-policy' <<<"$LOG")"
+run_script missing 1 "arn:aws:secretsmanager:us-east-1:111122223333:secret:doris-mcp/mcp_svc-*"
+check "apply/secret ARN mcp_svc-*: fails" 1 "$RC"
+check "apply/secret ARN mcp_svc-*: no IAM write" 0 "$(grep -cE 'create-role|put-role-policy' <<<"$LOG")"
+run_script missing 1 "arn:aws:secretsmanager:us-east-1:111122223333:secret:doris-mcp/mcp_svc-??????"
+check "apply/secret ARN mcp_svc-??????: fails" 1 "$RC"
+check "apply/secret ARN mcp_svc-??????: no IAM write" 0 "$(grep -cE 'create-role|put-role-policy' <<<"$LOG")"
 run_script missing 1 "arn:aws:secretsmanager:us-east-1:999999999999:secret:doris-mcp/mcp_svc-AbCdEf"
 check "apply/other-account secret ARN: fails" 1 "$RC"
 
@@ -138,6 +151,26 @@ check "apply/exists: RT_ROLE_ARN recorded" "RT_ROLE_ARN=$ROLE_ARN" "$(grep '^RT_
 run_script denied 1 "$SECRET_ARN"
 check "apply/get-role denied: fails instead of creating" 1 "$RC"
 check "apply/get-role denied: no IAM write" 0 "$(grep -cE 'create-role|put-role-policy' <<<"$LOG")"
+
+# The role ARN ends up in state.env, which every infra script sources: only the exact ARN may get there.
+run_script warn 1 "$SECRET_ARN"
+check "apply/get-role warning on stderr: exit 0" 0 "$RC"
+check "apply/get-role warning on stderr: no create-role" no "$(has "$LOG" "create-role")"
+check "apply/get-role warning on stderr: RT_ROLE_ARN is the clean ARN" "RT_ROLE_ARN=$ROLE_ARN" "$(grep '^RT_ROLE_ARN=' "$TMP/state.env")"
+check "apply/get-role warning on stderr: warning not in state.env" 0 "$(grep -c 'warning' "$TMP/state.env")"
+
+run_script badcreate 1 "$SECRET_ARN"
+check "apply/create-role other ARN: fails" 1 "$RC"
+check "apply/create-role other ARN: no put-role-policy" 0 "$(grep -c 'put-role-policy' <<<"$LOG")"
+check "apply/create-role other ARN: state.env unchanged" no "$(has "$(cat "$TMP/state.env")" "RT_ROLE_ARN")"
+check "apply/create-role other ARN: FATAL does not echo it" no "$(has "$OUT" "other-role")"
+
+run_script foreign 1 "$SECRET_ARN"
+check "apply/get-role other-account ARN: fails" 1 "$RC"
+check "apply/get-role other-account ARN: no IAM write" 0 "$(grep -cE 'create-role|put-role-policy' <<<"$LOG")"
+run_script foreign 0 "$SECRET_ARN"
+check "dry-run/get-role other-account ARN: fails" 1 "$RC"
+check "dry-run/get-role other-account ARN: no state_set" no "$(has "$OUT" "state_set")"
 
 if [[ "$FAILS" -gt 0 ]]; then echo "$FAILS failed"; exit 1; fi
 echo "all passed"

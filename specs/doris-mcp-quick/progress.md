@@ -333,7 +333,7 @@
 - Doris 无变更；没有创建或修改 AWS 资源（check-secrets 块 1b 只读取 Secrets Manager 里的 2 个密码，用于精确值扫描）。
 
 ### 2026-09-27 T3.1 Runtime 专用执行角色 `doris-mcp-runtime-role` [GATE]
-- 新文件 `infra/35-runtime-role.sh`、`infra/policies/runtime-trust.json`、`infra/policies/runtime-exec.json`、`infra/test/test-35-runtime-role.sh`、`scripts/test/test_render_agentcore.py` 和 `scripts/render-agentcore.py` 的补丁都直接从计划原样应用（`git apply` rc=0），没有偏差。
+- 新文件 `infra/35-runtime-role.sh`、`infra/policies/runtime-trust.json`、`infra/policies/runtime-exec.json`、`infra/test/test-35-runtime-role.sh`、`scripts/test/test_render_agentcore.py` 按计划原文直接写入；只有 `scripts/render-agentcore.py` 的补丁用了 `git apply`（rc=0）。与计划没有偏差（任务评审之后的修改见下面「修复第 1 轮」）。
 - TDD 红（Step 3），与计划「期望」逐行一致：`test-35-runtime-role.sh` `22 failed`（脚本不存在，退出码检查都是 `got '127'`；通过的 8 项都是「没有调用 / 没有写入」的反向检查）；`scripts/test` `Ran 9 tests`、`FAILED (failures=3, errors=3)`：2 个 `TypeError`（`main()` 不接受 `argv`）、1 个 `KeyError: 'executionRoleArn'`、3 个 `SystemExit not raised`（`test_requires_the_project_role`、`test_refuses_the_cdk_role`、`test_refuses_a_role_of_another_account`）；守现有行为的另外 3 个测试此时已通过。
 - 绿（Step 6）：`test-35-runtime-role.sh` 30 个 ok / `all passed`；`test-lib.sh` `all passed`；`scripts/test` `Ran 9 tests` / `OK`。回归：`test-40-doris-secret.sh`、`test-check-secrets.sh` `all passed`。
 - dry-run（Step 7，只调用只读的 `get-role` → `NoSuchEntity`）：把时间戳和临时文件名规范化以后，和计划「期望」`diff` 0 差异；`state.env` 未改动；输出里没有 IP / URL。
@@ -342,3 +342,18 @@
 - Runtime 还没有改，仍在用 CDK 角色：T3.2 的 deploy（另一个 GATE）之后，Runtime 才使用新角色，同时删除 CDK 角色。回滚（需 GATE；只有在 T3.2 deploy 之前才能直接删）：`aws iam delete-role-policy --role-name doris-mcp-runtime-role --policy-name doris-mcp-runtime`，再 `aws iam delete-role --role-name doris-mcp-runtime-role`，最后删掉 `state.env` 里的 `RT_ROLE_ARN` 行。
 - **规则偏差（自报）**：GATE 之后为了看 `state.env` 改了什么，执行了不带 `-U0` 的 `git diff infra/state.env`，diff 的上下文行把 `GW_URL` 打进了 implementer 的工具输出。没有写进仓库、日志或报告文件，也没有在对话里转述。之后只用 `git diff --stat` / `-U0` 并只看键名。
 - 提交前 `bash scripts/check-secrets.sh` → `check-secrets: OK (700 files scanned)`。Doris 无变更；除了 GATE 里建的 1 个 IAM 角色和它的内联策略，没有创建或修改其他 AWS 资源。
+- **修复第 1 轮（任务评审，只改代码，没有新 GATE，没有 APPLY）**。与计划代码的偏差由控制方裁定，计划文件不改：
+  - A. secret ARN 检查改为锚定的正则 `^arn:aws:secretsmanager:<区域>:<账号>:secret:doris-mcp/mcp_svc-[A-Za-z0-9]{6}$`。原来的前缀 glob 会放过 `…mcp_svc-*` 和 `…mcp_svc-??????`，把通配 Resource 写进策略。
+  - B. 角色 ARN 写进 `state.env` 之前，必须恰好等于 `arn:aws:iam::<账号>:role/doris-mcp-runtime-role`，否则输出一行固定的 `FATAL` 并 exit 1，不回显返回值：
+    - get-role 返回了 ARN 就要检查，dry-run 也一样；create-role 在 APPLY=1 时检查。检查都在 put-role-policy 和 `state_set` 之前。
+    - get-role 的 stderr 改写到 `private_tmp`（在 `_PRIVATE_TMPS` 里），成功时 CLI 的警告不会混进 ARN；`NoSuchEntity` 和其他失败的区分不变。
+    - dry-run 输出不变：用离线假 `aws` 对比提交前后两个版本，角色不存在（50 行）和已存在（35 行）两种情况输出都一样。
+  - 测试：`test-35-runtime-role.sh` 从 30 项增加到 46 项：
+    - `mcp_svc-*`、`mcp_svc-??????` 各 2 项；原来的 `*` 用例改名为 `bare *`；
+    - get-role 在 stderr 输出警告、stdout 输出 ARN 并 exit 0：成功，`state.env` 里只有干净的 ARN（4 项）；
+    - create-role 返回别的角色名：失败，没有 put-role-policy，`state.env` 不变，FATAL 不回显（4 项）；
+    - get-role 返回别的账号的 ARN：APPLY=1 失败、没有 IAM 写操作；dry-run 也失败、没有 `state_set`（4 项）。
+  - 结果：红 `14 failed`（32 ok；这 14 项正是新加的检查，新加的另外 2 项此时已通过）；绿 46 个 ok / `all passed`。回归：`test-lib.sh`、`test-40-doris-secret.sh`、`test-check-secrets.sh` `all passed`，`scripts/test` `Ran 9 tests` / `OK`。
+  - 线上只读 dry-run（经 IP / URL sed）仍然输出 `role exists: arn:aws:iam::890717383483:role/doris-mcp-runtime-role`、一行 `DRY-RUN: aws iam put-role-policy …`、`DRY-RUN: state_set …` 和 `done (APPLY=0)`；`git diff --stat infra/state.env` 为空。
+  - 没有执行 APPLY=1，没有创建或修改 AWS 资源，Doris 无变更。
+  - 暂不处理（控制方决定）：角色已存在时的策略漂移检查、测试不受外部 export 的 `DORIS_SECRET_ARN` 影响、其他测试缺口、render 的 `missing` 列表里加 `ACCOUNT_ID`。

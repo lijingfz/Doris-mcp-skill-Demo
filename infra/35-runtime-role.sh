@@ -15,7 +15,8 @@ RUNTIME_NAME=dorismcp_dorismcp # <agentcore project>_<runtime>; log groups are r
 
 if [[ "$APPLY" == "1" ]]; then
   : "${DORIS_SECRET_ARN:?DORIS_SECRET_ARN missing in state.env - finish T2.1 first}"
-  if [[ "$DORIS_SECRET_ARN" != "arn:aws:secretsmanager:$AWS_REGION:$ACCOUNT_ID:secret:doris-mcp/mcp_svc-"* ]]; then
+  # Anchored, with the 6-character suffix Secrets Manager appends: no wildcard may reach the policy.
+  if ! [[ "$DORIS_SECRET_ARN" =~ ^arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:doris-mcp/mcp_svc-[A-Za-z0-9]{6}$ ]]; then
     log "FATAL: DORIS_SECRET_ARN is not the doris-mcp/mcp_svc secret of this account/region"; exit 1
   fi
 fi
@@ -27,13 +28,22 @@ render_tmp() { # FILE → path of a rendered copy in $RENDERED
   [[ "$APPLY" == "1" ]] || { log "rendered $(basename "$1"):"; cat "$RENDERED" >&2; }
 }
 
+# RT_ROLE_ARN is written to state.env, which every infra script sources: accept only this exact ARN.
+WANT_ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/$ROLE_NAME"
+require_role_arn() { # FROM
+  [[ "$RT_ROLE_ARN" == "$WANT_ROLE_ARN" ]] || { log "FATAL: $1 did not return $WANT_ROLE_ARN"; exit 1; }
+}
+
 # get-role: distinguish "not found" from every other failure, so a missing permission or an
-# expired session never falls through to create-role.
+# expired session never falls through to create-role. stderr is kept apart so that a CLI
+# warning on success cannot become the ARN.
+private_tmp; GET_ROLE_ERR="$PRIVATE_TMP"
 RT_ROLE_ARN=""
-if out="$(aws iam get-role --role-name "$ROLE_NAME" --query Role.Arn --output text 2>&1)"; then
+if out="$(aws iam get-role --role-name "$ROLE_NAME" --query Role.Arn --output text 2>"$GET_ROLE_ERR")"; then
   RT_ROLE_ARN="$(none_to_empty "$out")"
-elif [[ "$out" != *NoSuchEntity* ]]; then
-  log "FATAL: get-role $ROLE_NAME failed: $out"; exit 1
+  [[ -z "$RT_ROLE_ARN" ]] || require_role_arn get-role
+elif ! grep -q NoSuchEntity "$GET_ROLE_ERR"; then
+  log "FATAL: get-role $ROLE_NAME failed: $(cat "$GET_ROLE_ERR")"; exit 1
 fi
 
 role_is_new=0
@@ -43,7 +53,7 @@ if [[ -z "$RT_ROLE_ARN" ]]; then
     --assume-role-policy-document "file://$RENDERED" --tags "Key=Project,Value=$PROJECT_TAG" \
     --description "AgentCore Runtime dorismcp: own logs + the doris-mcp/mcp_svc secret" \
     --query Role.Arn --output text)"
-  RT_ROLE_ARN="${RT_ROLE_ARN:-$(placeholder runtime-role-arn)}"
+  if [[ "$APPLY" == "1" ]]; then require_role_arn create-role; else RT_ROLE_ARN="$(placeholder runtime-role-arn)"; fi
   role_is_new=1
 else
   log "role exists: $RT_ROLE_ARN"
