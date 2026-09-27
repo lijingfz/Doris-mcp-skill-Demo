@@ -1,6 +1,6 @@
 # Doris MCP on AgentCore × Amazon Quick 桌面版 —— 设计
 
-> 版本：**v0.4** · 2026-09-26 · 状态：P2 已按 `plans/P2-doris.md` 在分支 `p2-doris` 实施完成（T2.1–T2.7），等待整体评审和用户决定合并方式；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
+> 版本：**v0.4.1** · 2026-09-27 · 状态：P2 已按 `plans/P2-doris.md` 在分支 `p2-doris` 实施完成（T2.1–T2.7），等待整体评审和用户决定合并方式；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
 > 输入材料：`prepare/` 下 4 份文件 + upstream `velodb-mcp-server`（锁定 commit `f235832`）+ 旧仓库 `velodb-mcp-agentcore`（复用流程与脚本）
 > 标注约定：✅ 已实测（本次对真实 Doris / AWS 账号只读验证）· 📄 官方文档确认 · ❓ 待 P0 验证
 
@@ -9,6 +9,7 @@
 | 版本 | 变更 |
 |---|---|
 | v0.1 | 初版（`docs/改造方案.md`），用户 review |
+| v0.4.1 | P2 整体评审（opus）I1：upstream query_metric 把指标列的 NULL 改写成 0，2025 年期间的同比会被报成 0；gmv_last_year / gmv_yoy 的 description 加上「无数据而不是持平」的说明，并记进 §6.3 的坑；需要重新发布 ecom（GATE）|
 | v0.4 | P2 代码在 spec 阶段完成 TDD 草稿（117 个 Python 测试 + 4 组 shell 测试），并用 `demo_ro` 对真实 Doris 只读跑通 11 个故事线对账用例（到分一致）：① 语义层发布改为**方案 C**：root 在本机进程内调用 upstream `DorisStore`，不起 Web UI（upstream 写接口要求 Doris 角色 `admin`），不调用 upstream `commit_staging`（它会 `GRANT … TO '%'`）（§4.2、§6.3）。② 首次发布由 root 创建 `system_mcp` 库、3 张表和 `ecom` 元数据行，`mcp_svc` 因此不需要 LOAD_PRIV；执行顺序改为 T2.1 → T2.4 → T2.5 → T2.2 → T2.3 → T2.6。③ `01_mcp_user.sql` 改为 `CREATE USER IF NOT EXISTS` + `ALTER USER`，密码占位符在内存里填入（§6.1）。④ §6.3 模型表按实际的 10 个文件、22 个指标重写，并记录编译器的坑。⑤ `reload_semantic_layer` 不需要调用：`ensure_fresh` 在 semantic_version 变化时自动重载。⑥ R-42 验收接受 Doris 给每个用户默认列出的 `information_schema` / `mysql` SELECT 和 workload group `normal` 的 USAGE（requirements v1.3）|
 | v0.3.1 | 用户决定 D9：User auth、Service auth 在 P0 都已跑通，**不做 Local stdio**（R-11 取消），备份路径改为 Cloud Connector + Service auth。§1、§2、§3、§4.4、§8.2、§8.3、§11、§13 同步；v0.3 行里「Local stdio 顺延到 T4.2」作废 |
 | v0.3 | P0 实测结论（`progress.md` T0.2–T0.7 日志）：① OAuth 回调 URL 就是默认值 `https://us-east-1.quicksight.aws.amazon.com/sn/oauthcallback` ✅；Quick 桌面版 User auth、Service auth 都已跑通，Local stdio 顺延到 T4.2（§4.4）。② Gateway 的 401 / PRM 实际内容；Quick 按 PRM 请求到了 `doris-mcp/invoke`；工具列表只有 target 工具（§4.5）。③ **经 Gateway 时每次 `tools/call` 都新开一个 Runtime 会话（冷启动约 4.5–5.5 s），预热无效**；直连时复用 `Mcp-Session-Id` 的热调用约 0.3 s（§4.5、§13）。④ agentcore CLI 0.30.0 的实际行为，包括 deploy 会顺带修改账号级 X-Ray Transaction Search 设置（§7、§13）。⑤ 待 P3 复查：CDK 默认执行角色带通配权限、Gateway `--exception-level DEBUG`（§14）|
@@ -330,6 +331,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
   - 订单级 GMV（`gmv`，含运费）与明细级 GMV（`line_gmv`，不含运费）是两个口径；订单级指标不能按 `cat1` / 品牌切（fan-out），按类目、品牌看用 `line_gmv` / `qty` / `gross_margin`。
   - 明细指标 `line_gmv` / `qty` / `gross_profit` 加已支付过滤 `order_entity__order_status IS NOT NULL`（能关联到 `v_paid_order`）；`refund_rate` = `refunded_item_count` / `item_count`，按故事 5.1 **不**过滤支付状态。
   - offset 指标（`gmv_last_year` / `gmv_yoy`）必须按 `metric_time` 分组并给出结束日期（time spine `dim_date` 到 2026-12-31）。
+  - upstream 的 query_metric 会把指标列的 NULL 改写成 0（tools/semantic.py）：2025 年及更早期间没有去年同期数据，gmv_last_year / gmv_yoy 返回 0 表示「无数据」而不是「持平」。两个指标的 description 都写明了这一点（P2 整体评审 I1）。
   - `<` / `>` 会被编译成闭区间，时间范围用 `BETWEEN`；`metric_time` 放在 `OR` 里会生成错误的 SQL；join 来的维度写全路径（裸名按第一条路径解析）。
   - YAML 里字面量 `$` 写成 `$$`；必须恰好有一个 project 文档。
 - 对账（`doris/reconcile.py`）：11 个故事线用例（YTD 汇总、2026 月度、同比、渠道、大区、小程序季度占比、一级类目、品牌层级、故事 5.1 退款率、店铺类型评价、退款原因），金额到分（误差 ≤ 0.005）、比率误差 ≤ 1e-6，与对照 SQL 一致。`direct` 模式在本机编译 YAML（T2.4，`demo_ro`），`mcp` 模式经进程内 MCP server 调用 `list_metrics` / `query_metric`（T2.6，`mcp_svc`）。

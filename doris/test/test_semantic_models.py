@@ -161,6 +161,10 @@ class EcomSemanticModels(unittest.TestCase):
                 # The dim_date spine runs to 2026-12-31: without an end date the offset rows of
                 # 2025-10..12 come back as future months with no current value (reconcile yoy_2026).
                 self.assertIn("结束日期", description)
+                # Upstream query_metric rewrites NULL metric cells to 0 (tools/semantic.py): periods before
+                # 2026 have no prior-year data, so the description must say 0 means "no data", not "flat".
+                self.assertIn("2025-01-01", description)
+                self.assertIn("无数据", description)
 
 
 if __name__ == "__main__":

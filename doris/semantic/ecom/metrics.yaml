@@ -36,7 +36,7 @@ metric:
 ---
 metric:
   name: gmv_last_year
-  description: 去年同期 GMV（metric_time 偏移 1 年），单位元；必须按 metric_time 分组（如 group_by metric_time__month），where 要写结束日期（如 metric_time BETWEEN '2026-01-01' AND '2026-09-25'），否则会多出没有本期值的未来月份
+  description: 去年同期 GMV（metric_time 偏移 1 年），单位元；必须按 metric_time 分组（如 group_by metric_time__month），where 要写结束日期（如 metric_time BETWEEN '2026-01-01' AND '2026-09-25'），否则会多出没有本期值的未来月份；数据从 2025-01-01 开始：2025 年及更早期间没有去年同期数据，gmv_last_year / gmv_yoy 会返回 0，表示无数据而不是持平，不要对这些期间报告同比
   label: 去年同期 GMV
   type: derived
   type_params:
@@ -48,7 +48,7 @@ metric:
 ---
 metric:
   name: gmv_yoy
-  description: GMV 同比增长率 = (GMV - 去年同期 GMV) / 去年同期 GMV；必须按 metric_time 分组（如 group_by metric_time__month），where 要写结束日期（如 metric_time BETWEEN '2026-01-01' AND '2026-09-25'），否则会多出没有本期值的未来月份
+  description: GMV 同比增长率 = (GMV - 去年同期 GMV) / 去年同期 GMV；必须按 metric_time 分组（如 group_by metric_time__month），where 要写结束日期（如 metric_time BETWEEN '2026-01-01' AND '2026-09-25'），否则会多出没有本期值的未来月份；数据从 2025-01-01 开始：2025 年及更早期间没有去年同期数据，gmv_last_year / gmv_yoy 会返回 0，表示无数据而不是持平，不要对这些期间报告同比
   label: GMV 同比
   type: derived
   type_params:
