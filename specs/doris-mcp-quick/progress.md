@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P2 执行中（Subagent-driven，implementer / reviewer 全部用 Opus 5.5；计划 `plans/P2-doris.md` 已通过用户 review）。P0、P1 已完成并本地合并到 `main`
-- **进行中**：无（分支 `p2-doris`；T2.1 已完成，T2.4 尚未开始）
-- **下一步**：T2.4（`doris/semantic/ecom/*.yaml` + `doris/reconcile.py`，`demo_ro` 只读跑 `direct` 11/11）。执行顺序 T2.1 ✅ → T2.4 → T2.5 → T2.2 → T2.3 → T2.6 → T2.7；4 个 GATE（T2.1 建 secret —— 已完成、T2.5 root 发布、T2.2 root 建 `mcp_svc` 并授权、T2.3 以 `mcp_svc` 写探针）每次都先给用户看 dry-run，确认后才 `APPLY=1`。T2.7 = P1 整体评审 ①–④ + P0 评审 M-2、M-8（纯离线）；P0 评审 M-1 / M-3 / M-4 已写进 T4.1 / T4.4 / T3.4，M-5、M-6、M-7、M-9 不做
+- **进行中**：无（分支 `p2-doris`；T2.1、T2.4 已完成，T2.5 尚未开始）
+- **下一步**：T2.5 **[GATE]**（`doris/publish_semantic.py` + `doris/publish-semantic.sh`，方案 C：root 在本机进程内调用 upstream `DorisStore`，把 `doris/semantic/ecom/` 发布为 workspace `ecom`；先离线校验，再给用户看 dry-run，确认后才 `APPLY=1`）。执行顺序 T2.1 ✅ → T2.4 ✅ → T2.5 → T2.2 → T2.3 → T2.6 → T2.7；4 个 GATE（T2.1 建 secret —— 已完成、T2.5 root 发布、T2.2 root 建 `mcp_svc` 并授权、T2.3 以 `mcp_svc` 写探针）每次都先给用户看 dry-run，确认后才 `APPLY=1`。T2.7 = P1 整体评审 ①–④ + P0 评审 M-2、M-8（纯离线）；P0 评审 M-1 / M-3 / M-4 已写进 T4.1 / T4.4 / T3.4，M-5、M-6、M-7、M-9 不做
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
@@ -196,3 +196,9 @@
 - **用户确认 → 00:45 UTC `APPLY=1 bash infra/40-doris-secret.sh`**（由主会话执行）：`secret doris-mcp/mcp_svc created`，state.env 新增 `DORIS_SECRET_ARN`（后缀 `RIUdT2`），`done (APPLY=1)`。
 - Step 12 只读验证：secret 内容只打印了用户名 / 长度 / 是否全是字母数字 → `mcp_svc 32 True`；state.env 有 `DORIS_SECRET_ARN=arn:aws:secretsmanager:us-east-1:890717383483:secret:doris-mcp/mcp_svc-RIUdT2`；重跑 dry-run → `secret exists: doris-mcp/mcp_svc (left unchanged)`、`done (APPLY=0)`（不会再生成密码）；check-secrets 不再有 WARN，两个 Secrets Manager 密码都参与精确值扫描，`check-secrets: OK (668 files scanned)`。
 - 密码没有出现在命令行参数、日志或对话输出里（只经过一个 0600 临时文件，用完即删）。回滚（需 GATE）：`aws secretsmanager delete-secret --region us-east-1 --secret-id doris-mcp/mcp_svc --recovery-window-in-days 7`。
+
+### 2026-09-27 T2.4 `ecom` 语义模型 + 对账脚本（`demo_ro` 只读）
+- TDD：新建 `doris/test/test_semantic_models.py`，先红（`Ran 12 tests`、`FAILED (failures=12)`，`bootstrap_from_yaml failed: models/ directory not found`），写 `doris/semantic/ecom/` 的 10 个 YAML 后 12/12 通过。新建 `doris/test/test_reconcile.py`，先红（`Ran 13 tests`、`FAILED (errors=1)`，`No module named 'reconcile'`），写 `doris/reconcile.py` 后 `doris/test` 共 41 个测试全部通过，输出无警告。所有文件与计划逐字一致。
+- 模型：workspace `ecom` 10 个文件、22 个指标、9 张物理表（不含 `dim_user` / `dim_user_address`），time spine `dim_date`；MetricFlow 引擎模式初始化成功，无重名、无阻塞问题。
+- Step 9：`demo_ro` 对真实 Doris 只读跑 `reconcile.py direct`（本机编译 YAML，只执行 SELECT，不访问 `system_mcp`）：11 个用例全部 `ok`（ytd_totals 1 行、monthly_2026 9、yoy_2026 9、channel_ytd 4、area_ytd 7、mini_program_quarterly 7、cat1_items_ytd 12、brand_tier_ytd 3、refund_rate_5_1 2、reviews_by_shop_type_ytd 4、refunds_by_reason_ytd 10），`11/11 cases match`，`exit=0`，与计划期望一致；输出里没有 Doris 主机地址和密码。
+- Doris 无变更（只读）；没有创建或修改 AWS 资源。

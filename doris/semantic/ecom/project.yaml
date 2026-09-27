@@ -1,0 +1,7 @@
+# ecom semantic layer (P2 / T2.4, design §6.3). Published to Doris system_mcp by doris/publish-semantic.sh.
+# Time spine for offset metrics (gmv_last_year / gmv_yoy): dim_date has one row per day, 2025-01-01..2026-12-31.
+time_config:
+  calendar:
+    - table: internal.ecom.dim_date
+      column: full_date
+      grain: day

@@ -1,0 +1,25 @@
+# Region dimension (city grain). On orders it is the delivery city; on shops it is the shop's city.
+semantic_model:
+  name: regions
+  description: 地区（dim_region，城市粒度；订单上是收货城市）
+  node_relation:
+    database: internal
+    schema_name: ecom
+    alias: dim_region
+  entities:
+    - name: region
+      type: primary
+      expr: region_id
+  dimensions:
+    - name: area
+      description: 大区 华北 / 东北 / 华东 / 华中 / 华南 / 西南 / 西北
+      type: categorical
+    - name: province
+      description: 省份
+      type: categorical
+    - name: city
+      description: 城市
+      type: categorical
+    - name: city_tier
+      description: 城市等级 一线 / 新一线 / 二线 / 三线 / 四线及以下
+      type: categorical

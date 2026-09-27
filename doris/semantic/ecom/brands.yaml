@@ -1,0 +1,19 @@
+# Brand dimension.
+semantic_model:
+  name: brands
+  description: 品牌（dim_brand）
+  node_relation:
+    database: internal
+    schema_name: ecom
+    alias: dim_brand
+  entities:
+    - name: brand
+      type: primary
+      expr: brand_id
+  dimensions:
+    - name: brand_name
+      description: 品牌名
+      type: categorical
+    - name: brand_tier
+      description: 品牌层级 国际品牌 / 国货品牌 / 新锐品牌
+      type: categorical

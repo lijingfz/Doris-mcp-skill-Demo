@@ -1,0 +1,46 @@
+# After-sales refunds, counted by application date. Refunds and order items are 1:1 on item_id.
+semantic_model:
+  name: refunds
+  description: 售后退款（fact_refund），一行一个退款申请（与订单明细 1:1），按申请日期 apply_date 统计
+  node_relation:
+    database: internal
+    schema_name: ecom
+    alias: fact_refund
+  defaults:
+    agg_time_dimension: apply_date
+  entities:
+    - name: refund
+      type: primary
+      expr: refund_id
+    - name: order_item
+      type: unique
+      expr: item_id
+    - name: shop
+      type: foreign
+      expr: shop_id
+  measures:
+    - name: refund_count
+      description: 退款申请数（任意状态），按申请日期
+      label: 退款数
+      agg: count_distinct
+      expr: refund_id
+    - name: refund_amount
+      description: 退款申请金额（任意状态，单位元），按申请日期；只看已退款用 where refund_status = 'REFUNDED'
+      label: 退款金额
+      agg: sum
+      expr: refund_amount
+  dimensions:
+    - name: apply_date
+      description: 退款申请日期
+      type: time
+      type_params:
+        time_granularity: day
+    - name: refund_reason
+      description: 退款原因，如 质量问题
+      type: categorical
+    - name: refund_type
+      description: 售后类型 RETURN_REFUND（退货退款）/ REFUND_ONLY（仅退款）/ EXCHANGE（换货）
+      type: categorical
+    - name: refund_status
+      description: 退款状态 REFUNDED / REJECTED / EXCHANGED / PROCESSING
+      type: categorical

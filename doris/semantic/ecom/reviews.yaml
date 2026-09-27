@@ -1,0 +1,42 @@
+# Product reviews, counted by review date.
+semantic_model:
+  name: reviews
+  description: 商品评价（fact_review），一行一条评价，按评价日期 review_date 统计
+  node_relation:
+    database: internal
+    schema_name: ecom
+    alias: fact_review
+  defaults:
+    agg_time_dimension: review_date
+  entities:
+    - name: review
+      type: primary
+      expr: review_id
+    - name: shop
+      type: foreign
+      expr: shop_id
+  measures:
+    - name: review_count
+      description: 评价数，按评价日期
+      label: 评价数
+      agg: count_distinct
+      expr: review_id
+    - name: avg_rating
+      description: 平均评分（1~5 分），按评价日期
+      label: 平均评分
+      agg: average
+      expr: rating
+    - name: bad_review_count
+      description: 差评数（rating <= 2），按评价日期
+      label: 差评数
+      agg: sum
+      expr: "CASE WHEN rating <= 2 THEN 1 ELSE 0 END"
+  dimensions:
+    - name: review_date
+      description: 评价日期
+      type: time
+      type_params:
+        time_granularity: day
+    - name: has_image
+      description: 是否带图 1 / 0
+      type: categorical

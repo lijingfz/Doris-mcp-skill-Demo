@@ -1,0 +1,22 @@
+# Category dimension. fact_order_item.category_id is always a level-3 category; v_category expands it.
+semantic_model:
+  name: categories
+  description: 商品类目（视图 v_category，三级类目展开到二级、一级）
+  node_relation:
+    database: internal
+    schema_name: ecom
+    alias: v_category
+  entities:
+    - name: category
+      type: primary
+      expr: category_id
+  dimensions:
+    - name: cat1_name
+      description: 一级类目，如 手机数码 / 食品生鲜 / 家居家装
+      type: categorical
+    - name: cat2_name
+      description: 二级类目
+      type: categorical
+    - name: cat3_name
+      description: 三级类目，如 月饼礼盒
+      type: categorical

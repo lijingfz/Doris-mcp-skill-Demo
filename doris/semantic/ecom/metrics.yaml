@@ -1,0 +1,139 @@
+# Explicit metrics. Measures of orders / refunds / reviews also become metrics of the same name
+# (upstream adds create_metric: true); order_items measures do not.
+# Filters use `order_entity__...` dimensions; see orders.yaml for why the entity is not called `order`.
+
+# ---- orders (v_paid_order) ----
+metric:
+  name: aov
+  description: 客单价 AOV = GMV / 订单数，单位元（已支付订单，含运费）
+  label: 客单价
+  type: ratio
+  type_params:
+    numerator:
+      name: gmv
+    denominator:
+      name: order_count
+---
+metric:
+  name: gmv_mini_program
+  description: 小程序渠道（channel = MINI_PROGRAM）的 GMV，单位元
+  label: 小程序 GMV
+  type: simple
+  type_params:
+    measure: gmv
+  filter: "{{ Dimension('order_entity__channel') }} = 'MINI_PROGRAM'"
+---
+metric:
+  name: mini_program_share
+  description: 小程序 GMV 占比 = 小程序 GMV / GMV（0~1）
+  label: 小程序 GMV 占比
+  type: ratio
+  type_params:
+    numerator:
+      name: gmv_mini_program
+    denominator:
+      name: gmv
+---
+metric:
+  name: gmv_last_year
+  description: 去年同期 GMV（metric_time 偏移 1 年），单位元；必须按 metric_time 分组（如 group_by metric_time__month），where 要写结束日期（如 metric_time BETWEEN '2026-01-01' AND '2026-09-25'），否则会多出没有本期值的未来月份
+  label: 去年同期 GMV
+  type: derived
+  type_params:
+    expr: gmv_ly
+    metrics:
+      - name: gmv
+        offset_window: 1 year
+        alias: gmv_ly
+---
+metric:
+  name: gmv_yoy
+  description: GMV 同比增长率 = (GMV - 去年同期 GMV) / 去年同期 GMV；必须按 metric_time 分组（如 group_by metric_time__month），where 要写结束日期（如 metric_time BETWEEN '2026-01-01' AND '2026-09-25'），否则会多出没有本期值的未来月份
+  label: GMV 同比
+  type: derived
+  type_params:
+    expr: (gmv - gmv_ly) / NULLIF(gmv_ly, 0)
+    metrics:
+      - name: gmv
+      - name: gmv
+        offset_window: 1 year
+        alias: gmv_ly
+---
+# ---- order_items (fact_order_item) ----
+metric:
+  name: line_gmv
+  description: 明细 GMV = 已支付订单的商品行实付金额之和（不含运费），单位元；按类目 / 品牌 / 店铺分析 GMV 时用它
+  label: 明细 GMV
+  type: simple
+  type_params:
+    measure: item_pay_amount
+  filter: "{{ Dimension('order_entity__order_status') }} IS NOT NULL"
+---
+metric:
+  name: qty
+  description: 销量 = 已支付订单的商品件数
+  label: 销量
+  type: simple
+  type_params:
+    measure: item_quantity
+  filter: "{{ Dimension('order_entity__order_status') }} IS NOT NULL"
+---
+metric:
+  name: gross_profit
+  description: 毛利 = 已支付订单的商品行（实付 - 成本）之和，单位元
+  label: 毛利
+  type: simple
+  type_params:
+    measure: item_profit
+  filter: "{{ Dimension('order_entity__order_status') }} IS NOT NULL"
+---
+metric:
+  name: gross_margin
+  description: 毛利率 = 毛利 / 明细 GMV（0~1）
+  label: 毛利率
+  type: ratio
+  type_params:
+    numerator:
+      name: gross_profit
+    denominator:
+      name: line_gmv
+---
+metric:
+  name: item_count
+  description: 商品行数（全部订单明细，含已取消订单），按下单日期；退款率 refund_rate 的分母
+  label: 商品行数
+  type: simple
+  type_params:
+    measure: item_rows
+---
+metric:
+  name: refunded_item_count
+  description: 发生过退款申请（任意状态）的商品行数，按商品下单日期；退款率 refund_rate 的分子
+  label: 退款商品行数
+  type: simple
+  type_params:
+    measure: item_rows
+  filter: "{{ Dimension('order_item__refund_status') }} IS NOT NULL"
+---
+metric:
+  name: refund_rate
+  description: 退款率 = 发生退款申请的商品行数 / 商品行数（0~1），按商品下单月统计（故事 5.1 口径，不过滤支付状态）；按店铺看用 group_by shop__shop_name
+  label: 退款率
+  type: ratio
+  type_params:
+    numerator:
+      name: refunded_item_count
+    denominator:
+      name: item_count
+---
+# ---- reviews (fact_review) ----
+metric:
+  name: bad_review_rate
+  description: 差评率 = 差评数（rating <= 2）/ 评价数（0~1），按评价日期
+  label: 差评率
+  type: ratio
+  type_params:
+    numerator:
+      name: bad_review_count
+    denominator:
+      name: review_count

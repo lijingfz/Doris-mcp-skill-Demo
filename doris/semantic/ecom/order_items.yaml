@@ -1,0 +1,54 @@
+# Line-level facts (one row per order item). No measure becomes a metric by itself (create_metric: false):
+# the metrics in metrics.yaml add the paid-order filter where the story SQL has it.
+semantic_model:
+  name: order_items
+  description: 订单明细（fact_order_item），一行一个商品行，按下单日期 order_date 统计；金额不含运费
+  node_relation:
+    database: internal
+    schema_name: ecom
+    alias: fact_order_item
+  defaults:
+    agg_time_dimension: order_date
+  entities:
+    - name: order_item
+      type: primary
+      expr: item_id
+    - name: order_entity
+      type: foreign
+      expr: order_id
+    - name: shop
+      type: foreign
+      expr: shop_id
+    - name: category
+      type: foreign
+      expr: category_id
+    - name: brand
+      type: foreign
+      expr: brand_id
+  measures:
+    - name: item_pay_amount
+      description: 明细实付金额（不含运费）
+      agg: sum
+      expr: pay_amount
+      create_metric: false
+    - name: item_quantity
+      description: 商品件数
+      agg: sum
+      expr: quantity
+      create_metric: false
+    - name: item_profit
+      description: 明细毛利 = 实付 - 成本
+      agg: sum
+      expr: pay_amount - cost_amount
+      create_metric: false
+    - name: item_rows
+      description: 明细行数
+      agg: count_distinct
+      expr: item_id
+      create_metric: false
+  dimensions:
+    - name: order_date
+      description: 下单日期
+      type: time
+      type_params:
+        time_granularity: day

@@ -1,0 +1,25 @@
+# Shop dimension.
+semantic_model:
+  name: shops
+  description: 店铺（dim_shop）
+  node_relation:
+    database: internal
+    schema_name: ecom
+    alias: dim_shop
+  entities:
+    - name: shop
+      type: primary
+      expr: shop_id
+    - name: region
+      type: foreign
+      expr: region_id
+  dimensions:
+    - name: shop_name
+      description: 店铺名，如 深圳极速数码配件专营店
+      type: categorical
+    - name: shop_type
+      description: 店铺类型 自营 / 旗舰店 / 专营店 / 普通店
+      type: categorical
+    - name: shop_level
+      description: 店铺星级 1~5
+      type: categorical

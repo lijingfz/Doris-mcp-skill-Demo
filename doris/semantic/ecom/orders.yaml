@@ -1,0 +1,64 @@
+# Order-level facts. Source is the view v_paid_order (fact_order without CANCELLED / PENDING_PAYMENT),
+# so every metric here is paid-only, like the story SQL. pay_amount includes freight.
+# The entity is named order_entity: an entity named `order` compiles to `... AS order`, a Doris syntax error.
+semantic_model:
+  name: orders
+  description: 有效订单（视图 v_paid_order = fact_order 去掉 CANCELLED / PENDING_PAYMENT，含 REFUNDED），一行一单，按下单日期 order_date 统计
+  node_relation:
+    database: internal
+    schema_name: ecom
+    alias: v_paid_order
+  defaults:
+    agg_time_dimension: order_date
+  entities:
+    - name: order_entity
+      type: primary
+      expr: order_id
+    - name: shop
+      type: foreign
+      expr: shop_id
+    - name: region
+      type: foreign
+      expr: region_id
+  measures:
+    - name: gmv
+      description: GMV（成交额）= 有效订单实付金额 pay_amount 之和（含运费），单位元；按下单日期
+      label: GMV
+      agg: sum
+      expr: pay_amount
+    - name: order_count
+      description: 有效订单数（已支付，含已退款订单）
+      label: 订单数
+      agg: count_distinct
+      expr: order_id
+    - name: buyer_count
+      description: 下单买家数（去重 user_id）；按月分组时是当月去重，不能跨月相加
+      label: 买家数
+      agg: count_distinct
+      expr: user_id
+    - name: discount_amount
+      description: 优惠金额 = 活动立减 discount_amount + 优惠券抵扣 coupon_amount，单位元
+      label: 优惠金额
+      agg: sum
+      expr: discount_amount + coupon_amount
+  dimensions:
+    - name: order_date
+      description: 下单日期
+      type: time
+      type_params:
+        time_granularity: day
+    - name: channel
+      description: 下单渠道 APP / MINI_PROGRAM / H5 / PC
+      type: categorical
+    - name: device_os
+      description: 设备系统 Android / iOS / HarmonyOS / Windows / macOS
+      type: categorical
+    - name: is_first_order
+      description: 是否首单 1 / 0
+      type: categorical
+    - name: order_status
+      description: 订单状态 PAID / SHIPPED / DELIVERED / COMPLETED / REFUNDED
+      type: categorical
+    - name: promo_id
+      description: 所属大促 ID，日常订单为 NULL
+      type: categorical
