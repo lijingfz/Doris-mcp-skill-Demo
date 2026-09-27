@@ -65,6 +65,9 @@ class ClusterConfig:
         self.query_timeout: int = query.get("query_timeout_seconds", 600)
         self.max_rows: int = query.get("query_max_rows", 10000)
         self.db_whitelist: list[str] = query.get("db_whitelist", []) or []
+        # Session wait_timeout set on every pool connection (None: keep the Doris default).
+        raw = query.get("session_wait_timeout_seconds")
+        self.session_wait_timeout: int | None = int(raw) if raw is not None else None
 
 
 class AppConfig:

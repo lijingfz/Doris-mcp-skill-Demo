@@ -40,6 +40,11 @@ class ConnectionPool:
         async with self._lock:
             if self._pool is not None and not self._pool.closed:
                 return self._pool
+            extra: dict[str, Any] = {}
+            if self._cluster.session_wait_timeout is not None:
+                # A pool left open by a torn-down Runtime microVM is never closed
+                # by the client; Doris reaps its connections after this timeout.
+                extra["init_command"] = f"SET wait_timeout = {int(self._cluster.session_wait_timeout)}"
             self._pool = await aiomysql.create_pool(
                 host=self._host,
                 port=self._cluster.fe_mysql_port,
@@ -52,6 +57,7 @@ class ConnectionPool:
                 # Recycle connections idle longer than this so a connection
                 # silently dropped by Doris wait_timeout is never reused.
                 pool_recycle=self._cluster.pool_idle_timeout,
+                **extra,
             )
             return self._pool
 

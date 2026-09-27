@@ -60,7 +60,7 @@
 
 | ✓ | ID | 标签 | 任务 | 需求 | 计划 |
 |---|---|---|---|---|---|
-| [ ] | T3.0 | [AI] | P2 整体评审遗留 M1–M4：两个 wrapper 先 `unset` 调用方 export 的 root / ro 变量；`permission_matrix.py` 只读检查失败时跳过探针、1105 要含 access / command denied、先 mask 再截断、重复对象合并、兜底 `except`；Secrets Manager client 构造失败也是 `SettingsError`；`check-secrets.sh` 读不到 secret 时失败。补丁 P-09：池连接 `SET wait_timeout = 600`（design §5.2、§13）| R-30, R-31, R-42, R-43 | P3 §T3.0 |
+| [x] | T3.0 | [AI] | P2 整体评审遗留 M1–M4：两个 wrapper 先 `unset` 调用方 export 的 root / ro 变量；`permission_matrix.py` 只读检查失败时跳过探针、1105 要含 access / command denied、先 mask 再截断、重复对象合并、兜底 `except`；Secrets Manager client 构造失败也是 `SettingsError`；`check-secrets.sh` 读不到 secret 时失败。补丁 P-09：池连接 `SET wait_timeout = 600`（design §5.2、§13）| R-30, R-31, R-42, R-43 | P3 §T3.0 |
 | [ ] | T3.1 | [AI+GATE] | `infra/35-runtime-role.sh` 建专用执行角色 `doris-mcp-runtime-role`：只能写 `runtimes/dorismcp_dorismcp-*` 日志组，只能 `GetSecretValue` `DORIS_SECRET_ARN` 这一个 secret；`scripts/render-agentcore.py --phase server` 把它写进 `agentcore.json` 的 `executionRoleArn`（CDK 导入它，不再生成角色、不附加策略；不在 CDK 之外改角色）（design §7、§14）| R-31, R-41 | P3 §T3.1 |
 | [ ] | T3.2 | [AI+GATE] | `agentcore.json`：codeLocation 改为 `../mcp-server/`，envVars 加 `DORIS_SECRET_ID`、`PROFILE_SCOPE`，执行角色换成 T3.1 的角色，重新部署（删除 CDK 角色，Runtime 原地更新，`RUNTIME_ARN` 不变）；锁定 `caio`、`platformdirs`，CodeZip 与 `.venv` 的 88 个 dist 一致；deploy 前确认 `~/.agentcore/config.json` 有 `"disableTransactionSearch": true`，否则 deploy 会改账号级 X-Ray 设置（design §13）| R-30 | P3 §T3.2 |
 | [ ] | T3.3 | [AI] | SigV4 直连冒烟（12 个工具 + flow）；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s（共享 session 和每次新 session 逐次测）；`reconcile.py mcp --url` 11/11；Doris 连接来源都在 `172.31.` | R-12, R-32 | P3 §T3.3 |
