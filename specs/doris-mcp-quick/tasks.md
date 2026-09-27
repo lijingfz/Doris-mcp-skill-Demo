@@ -36,16 +36,21 @@
 | [x] | T1.7 | [AI] | P-01：`GET /ping`、stderr 日志、`main()`（配置错误 exit 2）、`mcp_server.py` + HTTP 测试 + 本地启动冒烟 | R-30, R-32, R-34 | P1 §T1.7 |
 | [x] | T1.8 | [AI] | 本地 E2E：12 个工具、profile flow、3 种错误情况（`scripts/mcp_smoke.py flow`）| R-22–R-25 | P1 §T1.8 |
 
-## P2 Doris 与语义层（计划：`plans/P2-doris.md`，P1 完成后编写）
+## P2 Doris 与语义层（计划：`plans/P2-doris.md`）
 
-| ✓ | ID | 标签 | 任务 | 需求 |
-|---|---|---|---|---|
-| [ ] | T2.1 | [AI+GATE] | `infra/40-doris-secret.sh`：Secrets Manager `doris-mcp/mcp_svc`（随机密码）| R-31, R-43 |
-| [ ] | T2.2 | [AI+GATE] | `doris/01_mcp_user.sql`：root 建 `mcp_svc` 并授权（密码从 secret 读取后经 stdin 传入）| R-35, R-42 |
-| [ ] | T2.3 | [AI] | 权限矩阵测试：ecom 可读、system_mcp 可 CREATE IF NOT EXISTS、写操作被拒 | R-21, R-42 |
-| [ ] | T2.4 | [AI] | 编写 `doris/semantic/ecom/*.yaml`（orders / order_items / refunds / reviews）| R-26 |
-| [ ] | T2.5 | [AI+GATE] | 本地起 upstream 原版 server（admin，Web UI）发布 ecom 模型到 `system_mcp`，发布后关闭 | R-26 |
-| [ ] | T2.6 | [AI] | 用 `mcp_svc` 在本地跑 `list_metrics` / `query_metric`，与故事线 SQL 对账 | R-26 |
+目标：备好 Runtime 需要的 Doris 侧前提 —— secret `doris-mcp/mcp_svc`、最小权限账号 `mcp_svc`、已发布到 `system_mcp` 的 `ecom` 语义层（10 个 YAML、22 个指标），并证明 `mcp_svc` 权限恰好是 R-42、`query_metric` 与故事线 SQL 到分一致。
+全部代码已在 spec 阶段起草并验证（117 个 Python 测试 + 4 组 shell 测试通过；`demo_ro` 对真实 Doris 只读跑 `reconcile.py direct` 11/11），完整代码嵌在 `plans/P2-doris.md`。4 个 GATE 写操作在 spec 阶段都没有执行。
+执行顺序 T2.1 → T2.4 → T2.5 → T2.2 → T2.3 → T2.6 → T2.7：root 发布（T2.5）会创建 `system_mcp` 库、3 张表和 `ecom` 的元数据行，所以 `mcp_svc` 不需要 LOAD_PRIV；T2.3 要检查已发布的 `ecom`。T2.7 是 P1 / P0 整体评审留下的小修，用户 2026-09-26 决定并入本阶段，放在最后（纯离线）。
+
+| ✓ | ID | 标签 | 任务 | 需求 | 计划 |
+|---|---|---|---|---|---|
+| [ ] | T2.1 | [AI+GATE] | `infra/40-doris-secret.sh`：Secrets Manager `doris-mcp/mcp_svc`（Secrets Manager 生成 32 位字母数字密码，不显示），ARN 写入 `state.env`；`scripts/check-secrets.sh` 增加块 1b：对 Secrets Manager 里的密码做精确值扫描 | R-31, R-43 | P2 §T2.1 |
+| [ ] | T2.2 | [AI+GATE] | `doris/01_mcp_user.sql` + `doris/admin_sql.py` + `doris/apply-admin-sql.sh`：root 建 `mcp_svc` 并授权（secret 经管道进入 python，只在内存里填进 SQL；语句白名单；输出 mask）| R-35, R-42 | P2 §T2.2 |
+| [ ] | T2.3 | [AI+GATE] | `doris/permission_matrix.py`：以 `mcp_svc` 检查 `SHOW GRANTS` 恰好是 R-42（+ Doris 默认项）、库列表、9 张表可读、`ecom` 已发布；GATE 后跑 upstream store 初始化（须成功）+ 9 个写探针（须全部被拒，每个即使被允许也不改变数据），14/14 | R-21, R-42 | P2 §T2.3 |
+| [ ] | T2.4 | [AI] | `doris/semantic/ecom/*.yaml`（10 个文件、22 个指标、time spine `dim_date`）+ `doris/reconcile.py`（11 个故事线对账用例）；`demo_ro` 只读跑 `direct` 模式 11/11 | R-26 | P2 §T2.4 |
+| [ ] | T2.5 | [AI+GATE] | `doris/publish_semantic.py` + `doris/publish-semantic.sh`（方案 C）：root 在本机进程内调用 upstream `DorisStore` 发布（离线校验 bootstrap + MetricFlow 引擎 + 重名，物理表校验，staging → commit → 回读比对）；不起 Web UI，不执行 upstream `commit_staging` 的 `GRANT … TO '%'` | R-26 | P2 §T2.5 |
+| [ ] | T2.6 | [AI] | `reconcile.py mcp`：以 `mcp_svc` 在进程内起 MCP server，`list_metrics`（22 个与本地一致）+ `query_metric` 与故事线 SQL 11/11 到分一致；全部离线测试 | R-26 | P2 §T2.6 |
+| [ ] | T2.7 | [AI] | P1 整体评审 ①–④：`get_query_profile` 的 profile 文本经 `mask_sensitive`；读 secret 失败时不链接原异常（`from None`）；`main()` 捕获 `build_server` 的异常（exit 2 + 一行 mask 后的日志）；非默认端口传到 `cfg.cluster` 和 FE URL 的测试。P0 整体评审 M-2（`quick/T0.7-guide.md` 取 secret 的命令改成单行）、M-8（根 `.gitignore` 的 staging 注释）| R-30, R-31, R-32（评审项）| P2 §T2.7 |
 
 ## P3 AgentCore 部署（计划：`plans/P3-deploy.md`）
 
@@ -54,16 +59,16 @@
 | [ ] | T3.1 | [AI+GATE] | Runtime 执行角色追加 `secretsmanager:GetSecretValue`（只限 `doris-mcp/mcp_svc`）；同时收紧 CDK 默认角色的通配权限（`foundation-model/*`、`xray`/`logs` 的 `*`），走 `agentcore.json` 的 `executionRoleArn` 或 `additionalPolicies`，不在 CDK 之外改角色，`scripts/render-agentcore.py` 同步（design §7、§14）| R-31, R-41 |
 | [ ] | T3.2 | [AI+GATE] | `agentcore.json`：codeLocation 改为 `../mcp-server/`，envVars 加 `DORIS_SECRET_ID`、`PROFILE_SCOPE`，重新部署；deploy 前确认 `~/.agentcore/config.json` 有 `"disableTransactionSearch": true`，否则 deploy 会改账号级 X-Ray 设置（design §13）| R-30 |
 | [ ] | T3.3 | [AI] | SigV4 直连冒烟（12 个工具 + flow）；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s | R-12, R-32 |
-| [ ] | T3.4 | [AI+GATE] | `synchronize-gateway-targets`；Gateway token 冒烟（`doris___*` 共 12 个）；经 Gateway 每次调用都是冷启动，逐次记录耗时，至少含 `check_service_health` 和一个语义工具（`query_metric`）（design §13）| R-10 |
+| [ ] | T3.4 | [AI+GATE] | `synchronize-gateway-targets`；Gateway token 冒烟（`doris___*` 共 12 个）；经 Gateway 每次调用都是冷启动，逐次记录耗时，至少含 `check_service_health` 和一个语义工具（`query_metric`）（design §13）；测耗时的探针脚本收进仓库，可重复运行（P0 评审 M-4：P0 的会话 / 冷启动探针只在 `/tmp`）| R-10 |
 | [ ] | T3.5 | [AI+GATE] | `mcp_svc` host 收紧为 `'172.31.%'`（D6），复测 | R-42 |
 
 ## P4 Quick 桌面版（计划：`plans/P4-quick.md`）
 
 | ✓ | ID | 标签 | 任务 | 需求 |
 |---|---|---|---|---|
-| [ ] | T4.1 | [USER] | Cloud Connector Sync → 逐个启用 12 个工具，按 D7 设置权限 | R-10 |
+| [ ] | T4.1 | [USER] | Cloud Connector Sync → 逐个启用 12 个工具，按 D7 设置权限；核实 Quick 是否按 PRM 请求 scope，并据此修正 design 里的 scope 结论（P0 评审 M-1：请求不带 scope 时 Cognito 会授予 client 的全部 scope，P0 登录成功不能证明 Quick 请求了 scope）| R-10 |
 | [ ] | T4.3 | [AI] | 编写「Doris 专家」agent 指令 `quick/agent-instructions.md`（≤ 5 万字符）| R-51 |
-| [ ] | T4.4 | [USER] | 桌面版创建 Agent，跑「开场 + 第 2 幕」（User auth、Service auth 两个连接器各一次；Local stdio 按 D9 取消，原 T4.2 已删除）| R-10, R-13 |
+| [ ] | T4.4 | [USER] | 桌面版创建 Agent，跑「开场 + 第 2 幕」（User auth、Service auth 两个连接器各一次；Local stdio 按 D9 取消，原 T4.2 已删除）；记录 Quick 侧每次工具调用的端到端耗时（P0 评审 M-3：P0 只测了 Gateway 侧）| R-10, R-13 |
 
 ## P5 Skills 与彩排（计划：`plans/P5-skills.md`）
 

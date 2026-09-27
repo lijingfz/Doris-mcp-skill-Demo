@@ -1,6 +1,7 @@
 # 需求：Doris MCP on AgentCore × Amazon Quick 桌面版
 
-> 版本 v1.2 · 2026-09-26 · 来源：`prepare/` 下 4 份材料 + 用户确认的决策（见文末）
+> 版本 v1.3 · 2026-09-26 · 来源：`prepare/` 下 4 份材料 + 用户确认的决策（见文末）
+> v1.3：R-26 验收细化为 11 个故事线对账用例、到分一致；R-42 验收接受 Doris 给每个用户默认列出的权限项，并写明写探针（见 design v0.4 §6.1、§6.3）
 > v1.2：R-11（Local stdio 备份路径）按 D9 取消，备份路径改为 Service auth（R-13），R-13 的验收同步加严
 > v1.1：R-23 的 summary 裁剪规则按真实 profile 实测加严（另外删除全 0 计数器、折叠逐列统计；见 design v0.2.2），并补充 api_text 的命中条件
 > 句式采用 EARS：WHEN〈触发〉THE SYSTEM SHALL〈行为〉；「验收」一栏写可检验的标准。
@@ -24,7 +25,7 @@
 | R-23 | WHEN 调用 `get_query_profile(query_id, mode, max_chars)`，THE SYSTEM SHALL：校验 query_id 格式（`^[0-9a-f]{16}-[0-9a-f]{16}$`）；先查 v2 `data.profile`，WHERE scope=all 时回退到 `/api/profile/text`（只有第一行是段落标题的纯文本才算命中，`query id <id> not found` 算未命中）；`summary` 模式去掉 DetailProfile 段、值为 N/A 或全 0 的计数器，并把 PhysicalPlan 的逐列统计折叠为一行标记；输出截断到 `max_chars`（1 000–200 000，默认 20 000）并标记 `truncated`。 | 单测覆盖两条获取路径、not-found 纯文本、summary 各条裁剪规则、截断；P1 实测真实 profile 的 summary < 20 000 字符（spec 阶段实测 9 109）|
 | R-24 | IF profile 获取失败，THE SYSTEM SHALL 返回结构化结果，不抛异常：找不到 → `success` + `profile_found=false` + 证据；凭证错误（HTTP 200 + body `code:401`，或 HTTP 401/403）→ `UNAUTHENTICATED`；超时 → `QUERY_TIMEOUT`；网络或 FE 错误 → `CONNECTION_ERROR`；参数不合法 → `INVALID_PARAMS`。 | 每种情况都有单测；P1 实测非法 id、不存在的 id、错误密码三种 |
 | R-25 | THE SYSTEM SHALL 支持「带 profile 执行」，且不修改 Doris 全局配置：`execute_query("SELECT /*+SET_VAR(enable_profile=true)*/ ... /* trace:<id> */")` → `list_recent_queries(sql_contains=<id>)` → `get_query_profile`。 | P1 E2E 脚本 `scripts/mcp_smoke.py flow` 跑通 |
-| R-26 | THE SYSTEM SHALL 在 `ecom` workspace 提供语义指标（GMV、订单数、客单价、退款率等），且结果与故事线中的 SQL 一致。 | P2：`query_metric` 与对照 SQL 的结果一致 |
+| R-26 | THE SYSTEM SHALL 在 `ecom` workspace 提供语义指标（GMV、订单数、客单价、退款率等），且结果与故事线中的 SQL 一致。 | P2：经 MCP server（`mcp_svc`）调用 `query_metric`，11 个故事线对账用例（`doris/reconcile.py`）与对照 SQL 逐行一致：金额到分，比率误差 ≤ 1e-6；已发布的 22 个指标与本地模型一致 |
 
 ## 3. 运行时（AgentCore）
 
@@ -43,7 +44,7 @@
 |---|---|---|
 | R-40 | THE SYSTEM SHALL NOT 在任何安全组中出现 `0.0.0.0/0` 入站规则；新增规则只用 SG 引用（或 `/32`）。`doris-demo-sg` 现有规则保持不变。 | `infra/10-network.sh` 结束时自检；P3 审查 |
 | R-41 | THE SYSTEM SHALL 按具体资源 ARN 授予 IAM 权限（Runtime 执行角色、Gateway 服务角色、本机 proxy 用户）。 | 策略 JSON 审查 |
-| R-42 | `mcp_svc` SHALL 只有 `SELECT_PRIV ON internal.ecom.*` 和 `SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.*`，没有 ADMIN/LOAD/ALTER/DROP。 | P2 权限矩阵测试 |
+| R-42 | `mcp_svc` SHALL 只有 `SELECT_PRIV ON internal.ecom.*` 和 `SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.*`，没有 ADMIN/LOAD/ALTER/DROP。 | P2 权限矩阵（`doris/permission_matrix.py`）：`SHOW GRANTS` 恰好是这两项，外加 Doris 给每个用户默认列出的 `internal.information_schema`、`internal.mysql` 的 Select_priv 和 workload group `normal` 的 Usage_priv（v1.3 接受，不算多出的权限）；upstream store 初始化成功；LOAD / CREATE / DROP / GRANT / ADMIN 写探针全部被拒 |
 | R-43 | 仓库 SHALL NOT 包含任何明文凭证。 | 每次提交前 `scripts/check-secrets.sh` 返回 OK |
 | R-44 | WHEN 某个操作会创建或修改 AWS 资源、Doris 账号或安全组，THE SYSTEM（Claude）SHALL 先展示命令并等待用户确认。 | tasks.md 中所有 `[AI+GATE]` 任务的日志里都有「用户确认」记录 |
 

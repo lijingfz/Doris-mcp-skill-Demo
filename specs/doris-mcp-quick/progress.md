@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：P0 完成（T0.1–T0.8 + 整体评审，修复已提交），分支 `p0-spike` 本地合并到 `main`（用户选择，不 push）；P1 早先已合并（`7a4b5a3`）
-- **进行中**：无
-- **下一步**：编写 `plans/P2-doris.md`（P2 Doris 与语义层）；P3 之前建议先做 P1 整体评审的 4 项小修（见日志「P1 整体评审」，需用户确认）；P0 整体评审的 9 项 Minor 记录在日志「P0 整体评审」，由用户决定是否处理
+- **阶段**：P2 执行中（Subagent-driven，implementer / reviewer 全部用 Opus 5.5；计划 `plans/P2-doris.md` 已通过用户 review）。P0、P1 已完成并本地合并到 `main`
+- **进行中**：T2.1（Step 1 在新分支 `p2-doris` 上提交 spec 修订 —— tasks.md P2 段、design v0.4、requirements v1.3、本文件 —— 和计划）
+- **下一步**：T2.1 → T2.4 → T2.5 → T2.2 → T2.3 → T2.6 → T2.7；4 个 GATE（T2.1 建 secret、T2.5 root 发布、T2.2 root 建 `mcp_svc` 并授权、T2.3 以 `mcp_svc` 写探针）每次都先给用户看 dry-run，确认后才 `APPLY=1`。T2.7 = P1 整体评审 ①–④ + P0 评审 M-2、M-8（纯离线）；P0 评审 M-1 / M-3 / M-4 已写进 T4.1 / T4.4 / T3.4，M-5、M-6、M-7、M-9 不做
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
@@ -172,3 +172,18 @@
 - 同步修改：requirements v1.2（R-11 取消、R-13 成为备份路径并加 P4 验收、新增 D9）；design v0.3.1（§1、§2、§3 图、§4.4、§8.2 标为已取消但保留作参考、§8.3、§11 P0 / P4、§13 `mcp-proxy-for-aws` 一行关闭）；tasks（T0.7 备注、删除 T4.2、T4.4 改为 User auth / Service auth 各一次，需求列 R-11 → R-13）。
 - P0 退出标准第 3 条按 D9 视为满足（User auth、Service auth 两条路径都已调用成功）。评审 M-6（Local stdio 路径的预热）随之不再适用。`quick/local-connector.json`、`scripts/render-local-connector.py` 保留作参考。
 - 用户选择：分支 `p0-spike` 本地合并到 `main`，不 push。
+
+### 2026-09-26 P2 计划编写
+- `plans/P2-doris.md` 写好：任务按执行顺序排列 T2.1 → T2.4 → T2.5 → T2.2 → T2.3 → T2.6（root 发布时会创建 `system_mcp` 和 `ecom` 元数据行，所以 `mcp_svc` 不需要 LOAD_PRIV；T2.3 要检查已发布的 `ecom`）。全部代码按 TDD 在 `.superpowers/sdd/P2-doris/draft/`（git 忽略）起草，**权威版本是计划里嵌入的代码**：117 个 Python 测试 + 4 组 shell 测试（23 / 10 / 12 / 14 项）。
+- 调研结论（写进 design v0.4 §4.2、§6.1、§6.3）：upstream Web UI 写接口要求 Doris 角色 `admin`，`commit_staging` 会 `GRANT … TO '%'`，`validate` 不初始化 MetricFlow 引擎 → 发布改为**方案 C**（root 在进程内调用 `DorisStore`，离线校验含引擎初始化 + 重名检查，发布前 DESCRIBE 物理表，回读逐字节比对，不执行 GRANT）；`ensure_fresh` 按 semantic_version 自动重载，不需要 `reload_semantic_layer`。
+- 模型：10 个 YAML、22 个指标、9 张物理表，time spine `dim_date`。`demo_ro` 对真实 Doris **只读**跑 `reconcile.py direct`：11/11 个故事线用例到分一致（YTD GMV 65,442,236.24 / 订单 42,770 / 买家 20,187 / AOV 1530.10；故事 5.1 退款率 07 月 17.39%、08 月 22.08%）。
+- 安全：`scripts/check-secrets.sh` 新增块 1b，对 Secrets Manager 里的密码做精确值扫描（固定读 us-east-1，因为本机 `AWS_DEFAULT_REGION` 是 us-west-2）；所有脚本的输出、异常信息都把 Doris 主机和密码 mask 成 `***`；root 密码只在 `APPLY=1` 时以新变量名传给 python；`mcp_svc` 密码经管道进入 python。
+- spec 阶段**没有执行**任何 GATE 写操作（secret、发布、建账号、写探针）；`demo_ro` 只做了 SELECT / SHOW / DESCRIBE。自动模式拒绝过一次用 `demo_ro` 试探写操作的命令，计划里写明不要重试。
+- 计划自查：从 HEAD 的干净副本（`/tmp/p2sim`）按计划顺序从计划文件里提取代码并逐步回放，每一步的红 / 绿输出、测试数、dry-run 输出都与「期望」一致，回放出来的文件树与草稿逐字节相同；修正了 4 处「期望」（两处 shell 红阶段改用 grep 显示 FAIL 行、T2.4 红阶段是 `failures=12` 而不是 errors，文件地图中 2 处测试数）。计划文件经 check-secrets 扫描通过，Doris 主机地址和密码命中 0 次。
+- spec 修订（未提交，随计划一起给用户 review）：tasks.md P2 段（目标、执行顺序、计划列，T2.3 标签改为 [AI+GATE]，T2.5 改为方案 C）；design v0.4（§4.2、§5.1、§6.1、§6.3、§11 P2 行、§14）；requirements v1.3（R-26、R-42 验收）。
+
+### 2026-09-26 P2 计划通过 review，执行方式与评审小修（用户决定）
+- 用户回复「P1 可以合并，P0 按照你的意见进行修改。P2 采用你推荐的 subagent-driven 的方式推进」。理解为：P1 整体评审的 4 项小修①–④并入 P2 分支，作为最后一个任务 T2.7，P0 评审的 M-2（`quick/T0.7-guide.md` 取 secret 改成单行命令）、M-8（`.gitignore` staging 注释）一并放进 T2.7；M-1、M-3、M-4 按建议写进 T4.1、T4.4、T3.4；M-5、M-6（已随 D9 不适用）、M-7、M-9 不做。
+- 计划新增 T2.7（9 步，纯离线）：`get_query_profile` 输出的 profile 文本按 SQL 预览同样 mask；`build_server` 失败时只写一行 mask 过的日志并 `exit 2`；读 secret 失败不再链出原始异常；新增非默认端口一路传到集群配置和 FE URL 的测试。新增 5 个测试，agentcore 测试共 82 个。所有代码块在临时副本里走完 RED → GREEN 和变异检查，与计划逐块一致。
+- tasks.md：新增 T2.7 行；T3.4、T4.1、T4.4 分别补上 M-4、M-1、M-3。
+- 执行方式：Subagent-driven（superpowers:subagent-driven-development），每个任务一个 implementer + 一个 task reviewer，最后做整体评审，全部指定 Opus 5.5。GATE 步骤由 implementer 停下来报告 dry-run，经用户逐次确认后才 `APPLY=1`。

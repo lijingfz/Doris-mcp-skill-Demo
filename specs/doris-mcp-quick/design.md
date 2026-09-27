@@ -1,6 +1,6 @@
 # Doris MCP on AgentCore × Amazon Quick 桌面版 —— 设计
 
-> 版本：**v0.3.1** · 2026-09-26 · 状态：P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
+> 版本：**v0.4** · 2026-09-26 · 状态：P2 计划已写好（`plans/P2-doris.md`），等待 review；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
 > 输入材料：`prepare/` 下 4 份文件 + upstream `velodb-mcp-server`（锁定 commit `f235832`）+ 旧仓库 `velodb-mcp-agentcore`（复用流程与脚本）
 > 标注约定：✅ 已实测（本次对真实 Doris / AWS 账号只读验证）· 📄 官方文档确认 · ❓ 待 P0 验证
 
@@ -9,6 +9,7 @@
 | 版本 | 变更 |
 |---|---|
 | v0.1 | 初版（`docs/改造方案.md`），用户 review |
+| v0.4 | P2 代码在 spec 阶段完成 TDD 草稿（117 个 Python 测试 + 4 组 shell 测试），并用 `demo_ro` 对真实 Doris 只读跑通 11 个故事线对账用例（到分一致）：① 语义层发布改为**方案 C**：root 在本机进程内调用 upstream `DorisStore`，不起 Web UI（upstream 写接口要求 Doris 角色 `admin`），不调用 upstream `commit_staging`（它会 `GRANT … TO '%'`）（§4.2、§6.3）。② 首次发布由 root 创建 `system_mcp` 库、3 张表和 `ecom` 元数据行，`mcp_svc` 因此不需要 LOAD_PRIV；执行顺序改为 T2.1 → T2.4 → T2.5 → T2.2 → T2.3 → T2.6。③ `01_mcp_user.sql` 改为 `CREATE USER IF NOT EXISTS` + `ALTER USER`，密码占位符在内存里填入（§6.1）。④ §6.3 模型表按实际的 10 个文件、22 个指标重写，并记录编译器的坑。⑤ `reload_semantic_layer` 不需要调用：`ensure_fresh` 在 semantic_version 变化时自动重载。⑥ R-42 验收接受 Doris 给每个用户默认列出的 `information_schema` / `mysql` SELECT 和 workload group `normal` 的 USAGE（requirements v1.3）|
 | v0.3.1 | 用户决定 D9：User auth、Service auth 在 P0 都已跑通，**不做 Local stdio**（R-11 取消），备份路径改为 Cloud Connector + Service auth。§1、§2、§3、§4.4、§8.2、§8.3、§11、§13 同步；v0.3 行里「Local stdio 顺延到 T4.2」作废 |
 | v0.3 | P0 实测结论（`progress.md` T0.2–T0.7 日志）：① OAuth 回调 URL 就是默认值 `https://us-east-1.quicksight.aws.amazon.com/sn/oauthcallback` ✅；Quick 桌面版 User auth、Service auth 都已跑通，Local stdio 顺延到 T4.2（§4.4）。② Gateway 的 401 / PRM 实际内容；Quick 按 PRM 请求到了 `doris-mcp/invoke`；工具列表只有 target 工具（§4.5）。③ **经 Gateway 时每次 `tools/call` 都新开一个 Runtime 会话（冷启动约 4.5–5.5 s），预热无效**；直连时复用 `Mcp-Session-Id` 的热调用约 0.3 s（§4.5、§13）。④ agentcore CLI 0.30.0 的实际行为，包括 deploy 会顺带修改账号级 X-Ray Transaction Search 设置（§7、§13）。⑤ 待 P3 复查：CDK 默认执行角色带通配权限、Gateway `--exception-level DEBUG`（§14）|
 | v0.2.2 | P1 代码在 spec 阶段完成 TDD 草稿，并用 `demo_ro` 连真实 Doris 跑通 E2E（结论写进 `plans/P1-mcp-server.md`）：① `/api/profile/text` 找不到 id 时返回**纯文本** `query id <id> not found`，因此「非 JSON 就是命中」的判断改为「第一行必须是段落标题」（§4.1、§5.3）。② summary 额外删除全 0 计数器，并折叠 PhysicalPlan 的逐列统计：真实 profile 103 487 → **9 109** 字符（旧规则 20 487）（§4.1、§5.3、R-23）。③ Doris 会保留 `/* trace:… */` 注释，§5.3 的 ❓ 关闭。④ 入口**不挂** `RequestLoggerMiddleware`（它会把请求 header 和 body 里的 SQL 写进 CloudWatch）（§4.6、§5.2、§13）。⑤ P-07：vendoring 时要带上 upstream 根目录的 `requirements.txt`（upstream `test_deps.py` 需要它）；AgentCore CLI 0.30 先试 `aarch64-manylinux2014`，`rapidfuzz` 没有该平台 wheel，CLI 会自动回退到 `manylinux_2_28`，安装后约 107 MB |
@@ -121,7 +122,7 @@
 ### 4.2 Doris 权限与语义层 ✅
 - `demo_ro` 只有 `SELECT` on `ecom` / `information_schema` / `mysql`。
 - upstream 把语义模型存在 Doris 的 `system_mcp` 库里。`DorisStore.discover_workspaces()` 和 `_ensure_tables()` 会执行 `CREATE DATABASE IF NOT EXISTS system_mcp`、`CREATE TABLE IF NOT EXISTS workspace_metadata …`。**实测：即使库已存在，Doris 也会先检查 CREATE 权限**（`demo_ro` 执行 `CREATE DATABASE IF NOT EXISTS ecom` 报 Access denied）→ `mcp_svc` 需要 `CREATE_PRIV ON internal.system_mcp.*`（§6.1）。
-- 发布语义模型时 upstream 会执行 `GRANT SELECT_PRIV ... TO '%'`，需要 admin → **模型发布走一次性的本地 admin 流程**，不在 Runtime 上做（§6.3）。
+- upstream 的发布路径（Web UI / `commit_staging`）会执行 `GRANT SELECT_PRIV ... TO '%'`，写接口还要求 Doris 角色 `admin` → **模型发布走方案 C**：root 在本机进程内调用 `DorisStore` 的 staging / commit，不执行任何 GRANT，不在 Runtime 上做（§6.3）。
 
 ### 4.3 AWS 网络 ✅ / 📄
 - 账号 `890717383483`，default VPC `vpc-0b806cad7faf55718`（172.31.0.0/16，DNS support/hostnames 均已开启）：**没有 NAT，也没有任何 VPC endpoint**。
@@ -205,7 +206,7 @@ Doris-mcp-skill-Demo/
 ├── spike/p0-mcp/                    # P0 最小 MCP（net_check），P0 结束后保留作排障工具
 ├── dorismcp/                        # agentcore CLI 项目（agentcore/agentcore.json, aws-targets.json, cdk/）
 ├── infra/                           # lib.sh + 幂等脚本（默认 dry-run）+ state.env + policies/
-├── doris/                           # 01_mcp_user.sql（无明文）、semantic/ecom/*.yaml（P2）
+├── doris/                           # P2：01_mcp_user.sql（只有占位符）、semantic/ecom/*.yaml、publish/admin wrapper、reconcile.py、permission_matrix.py、test/
 ├── quick/                           # 桌面版：agent 指令、local-connector.json、skills/doris-mcp-adapter/（P4/P5）
 ├── scripts/                         # mcp_smoke.py、get-gw-token.sh、render-agentcore.py、check-secrets.sh
 ├── .venv/                           # 本地 venv（放在 codeLocation 之外，避免被打进 CodeZip / 符号链接 ELOOP）
@@ -290,28 +291,48 @@ register_profile_tools(mcp, target, scope="all", transport=None)
 
 ### 6.1 服务账号 `mcp_svc`
 ```sql
--- doris/01_mcp_user.sql（由 root 执行；密码先由 infra/40-doris-secret.sh 生成并存入 Secrets Manager，执行时再带入，不写文件）
-CREATE USER 'mcp_svc'@'%' IDENTIFIED BY '<from-secret>';
+-- doris/01_mcp_user.sql（由 root 经 doris/apply-admin-sql.sh 执行；密码由 infra/40-doris-secret.sh 生成并存入
+-- Secrets Manager，执行时经管道进入 doris/admin_sql.py，只在内存里替换占位符，不进 argv、文件和输出）
+CREATE USER IF NOT EXISTS 'mcp_svc'@'%' IDENTIFIED BY '${MCP_SVC_PASSWORD}';
+ALTER USER 'mcp_svc'@'%' IDENTIFIED BY '${MCP_SVC_PASSWORD}';   -- 重跑时收敛到 secret 里的密码
 GRANT SELECT_PRIV ON internal.ecom.* TO 'mcp_svc'@'%';
 GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CREATE 只为让 CREATE ... IF NOT EXISTS 通过
 ```
-- 不授予 ADMIN / LOAD / ALTER / DROP。能访问哪些数据由 Doris 权限决定，MCP 的 SQL 校验器是第二道防线。
+- 不授予 ADMIN / LOAD / ALTER / DROP。能访问哪些数据由 Doris 权限决定，MCP 的 SQL 校验器是第二道防线。`admin_sql.py` 只接受白名单内的语句（CREATE USER IF NOT EXISTS / ALTER USER … IDENTIFIED BY / 单库 GRANT SELECT_PRIV、CREATE_PRIV），执行后打印 `SHOW GRANTS`。
+- `doris/permission_matrix.py`（T2.3）验证：`SHOW GRANTS` 恰好是上面两条 + Doris 默认项（`internal.information_schema`、`internal.mysql` 的 Select_priv，workload group `normal` 的 Usage_priv）；upstream store 初始化以 `mcp_svc` 成功；9 个写探针（LOAD ×4、CREATE、DROP ×2、GRANT、ADMIN）全部被拒，每个探针即使被允许也不改变任何数据。
 - 先用 `'%'`（D6），因为 P2 需要从本机（13.125.9.110）联调，网络边界由 SG 控制（只有 /32 和 Runtime SG 两个来源）。P3 之后收紧为 `'172.31.%'`。
 
 ### 6.2 Profile 策略
 - **不改全局配置**（D5），只用 `SET_VAR` hint 按需采集（§5.3）。
 
 ### 6.3 语义层：`ecom` workspace
-- 在本机临时起一个 **upstream 原版** server（`localhost:3000`，Web UI 可用，用 admin 账号连 Doris 公网 IP，SG 已放行 /32），编写并发布 YAML 到 `system_mcp`。这是一次性操作，发布完即关闭。
-- Runtime 用服务账号读取模型；模型变更后调用 `reload_semantic_layer`。
-- 初版模型（按 upstream MetricFlow 的支持程度在 P2 裁剪）：
+- **发布走方案 C**（T2.5，`doris/publish-semantic.sh` → `doris/publish_semantic.py`）：root 在本机进程内调用 upstream `DorisStore('ecom')`，连 Doris 公网 IP（SG 已放行 /32）。
+  1. 离线校验：`bootstrap_from_yaml` + **MetricFlow 引擎初始化** + measure / 模型重名检查。upstream 的 `validate` 不初始化引擎：缺 `agg_time_dimension`、measure 重名都能 commit 上去，之后该 workspace 的每次 `query_metric` 都会失败。
+  2. `pre_validate_physical`：DESCRIBE 9 张物理表并检查列表达式。放在打开 store 之前，因为 `DorisStore(...)` 初始化本身就会写（CREATE IF NOT EXISTS + 元数据行）。
+  3. staging：discard → upsert 全部本地文件 → delete 远端多余文件 → merged staging 与本地逐字节比对 → `staging_commit`（semantic_version + 1）→ active 与本地逐字节比对；semantic_version 必须前进。active 与本地一致且 staging 为空时不做任何写入。
+  - 不用 Web UI：upstream 写接口要求 Doris 角色 `admin`，root 很可能只有 `operator`，会 403。不调用 upstream `commit_staging` / `grant_select_on_physical_tables` / `grant_workspace_access`：它们会执行 `GRANT SELECT_PRIV … TO '%'`。
+  - 首次发布时 `DorisStore` 创建 `system_mcp` 库和 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom` 三张表，插入 `semantic_version=1` 的元数据行，commit 后为 2。所以 root 发布在建 `mcp_svc` 之前，`mcp_svc` 只需要 SELECT + CREATE（CREATE 只用于 IF NOT EXISTS），不需要 LOAD。
+- Runtime 用服务账号读取模型；`ensure_fresh` 在 semantic_version 变化时自动重载，**不需要**调用 `reload_semantic_layer`。
+- 模型（`doris/semantic/ecom/`，10 个文件、22 个指标、9 张物理表）：
 
-| semantic model | 来源表 | 指标 | 维度 | 对应剧情 |
+| 文件 | 来源表 | measure（同名指标）| 维度 / entity | 对应剧情 |
 |---|---|---|---|---|
-| orders | `v_paid_order` / `fact_order` | gmv=sum(pay_amount)、order_count、buyer_count、aov(派生)、discount_amount | order_date(日/月)、channel、device_os、is_first_order、shop(dim_shop)、area/province(dim_region) | 第 2、3 幕 |
-| order_items | `fact_order_item` | line_gmv、qty、gross_profit=sum(pay_amount-cost_amount) | category L1/L2(v_category)、brand | 第 3 幕 |
-| refunds | `fact_refund` | refund_count、refund_amount、refund_rate(派生) | shop、month、reason | 第 5.1 幕 |
-| reviews | `fact_review` | review_count、avg_rating、bad_review_count(rating≤2) | shop、month | 第 5.4 幕 |
+| `project.yaml` | `dim_date` | time spine（按天，2025-01-01 ~ 2026-12-31）| — | 同比 |
+| `orders.yaml` | `v_paid_order` | gmv=sum(pay_amount，含运费)、order_count、buyer_count、discount_amount=discount_amount+coupon_amount | order_date、channel、device_os、is_first_order、order_status、promo_id；entity `order_entity`、shop、region | 第 2、3 幕 |
+| `order_items.yaml` | `fact_order_item` | item_pay_amount、item_quantity、item_profit、item_rows（`create_metric: false`，由 metrics.yaml 定义指标）| order_date；entity order_item、`order_entity`、shop、category、brand | 第 3 幕 |
+| `refunds.yaml` | `fact_refund` | refund_count、refund_amount | apply_date、refund_reason、refund_type、refund_status；entity refund、order_item、shop | 第 5.1 幕 |
+| `reviews.yaml` | `fact_review` | review_count、avg_rating、bad_review_count(rating≤2) | review_date、has_image；entity review、shop | 第 5.4 幕 |
+| `regions.yaml` / `shops.yaml` / `categories.yaml` / `brands.yaml` | `dim_region` / `dim_shop` / `v_category` / `dim_brand` | — | area、province、city、city_tier / shop_name、shop_type、shop_level（entity region）/ cat1–cat3_name / brand_name、brand_tier | — |
+| `metrics.yaml` | — | 13 个显式指标：aov、gmv_mini_program、mini_program_share、gmv_last_year、gmv_yoy、line_gmv、qty、gross_profit、gross_margin、item_count、refunded_item_count、refund_rate、bad_review_rate | — | — |
+
+- 口径与编译器的坑（spec 阶段实测，写在 YAML 注释和 `doris/test/test_semantic_models.py` 里）：
+  - entity 叫 `order_entity`（`order` 是 SQL 保留字）；`shop_id` 是 entity，按店铺过滤写 `shop__shop_name`。
+  - 订单级 GMV（`gmv`，含运费）与明细级 GMV（`line_gmv`，不含运费）是两个口径；订单级指标不能按 `cat1` / 品牌切（fan-out），按类目、品牌看用 `line_gmv` / `qty` / `gross_margin`。
+  - 明细指标 `line_gmv` / `qty` / `gross_profit` 加已支付过滤 `order_entity__order_status IS NOT NULL`（能关联到 `v_paid_order`）；`refund_rate` = `refunded_item_count` / `item_count`，按故事 5.1 **不**过滤支付状态。
+  - offset 指标（`gmv_last_year` / `gmv_yoy`）必须按 `metric_time` 分组并给出结束日期（time spine `dim_date` 到 2026-12-31）。
+  - `<` / `>` 会被编译成闭区间，时间范围用 `BETWEEN`；`metric_time` 放在 `OR` 里会生成错误的 SQL；join 来的维度写全路径（裸名按第一条路径解析）。
+  - YAML 里字面量 `$` 写成 `$$`；必须恰好有一个 project 文档。
+- 对账（`doris/reconcile.py`）：11 个故事线用例（YTD 汇总、2026 月度、同比、渠道、大区、小程序季度占比、一级类目、品牌层级、故事 5.1 退款率、店铺类型评价、退款原因），金额到分（误差 ≤ 0.005）、比率误差 ≤ 1e-6，与对照 SQL 一致。`direct` 模式在本机编译 YAML（T2.4，`demo_ro`），`mcp` 模式经进程内 MCP server 调用 `list_metrics` / `query_metric`（T2.6，`mcp_svc`）。
 
 ### 6.4 安全组（P0 的 `infra/10-network.sh` 创建）
 - `doris-mcp-rt`（挂到 Runtime ENI）：**无入站**。删除默认的全放行出站，只放行：TCP 9030/8030 → `doris-demo-sg`；TCP 443 → `doris-mcp-vpce`；TCP 443 → S3 prefix list `pl-63a5400a`（共 4 条）。
@@ -445,7 +466,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 |---|---|---|
 | **P0 技术验证** | VPC endpoints + SG；最小 MCP（`net_check`）部署到 Runtime VPC 模式；Cognito；Gateway（IAM 出站）；Quick 桌面版 ① 和 ② 各连一次（② 按 D9 取消，改为 Service auth 连一次 ✅）| ① Runtime 内能 TCP 连通 172.31.25.143:9030/8030；② 经 Gateway 能列出并调用 `doris___net_check`；③ 桌面版两条路径都能调用该工具（按 D9 为 User auth 与 Service auth，均 ✅）；④ 记录冷启动耗时、OAuth 回调 URL 和 scope 行为 |
 | **P1 本地改造** | §5 全部补丁；本机用 `demo_ro` 连 Doris 公网 IP 联调 | 12 个工具都能调；Draft 7 校验通过；upstream 离线测试全部通过；profile：用 hint 执行 → 能列出 → 能取到 summary（< 20k 字符）；非法 qid、找不到、密码错误三种情况都返回结构化结果 |
-| **P2 Doris 与语义层** | §6：secret、账号、授权、ecom 语义模型发布 | `mcp_svc` 权限矩阵通过；`query_metric` 的 GMV 与故事线 SQL 结果一致 |
+| **P2 Doris 与语义层** | §6：secret、账号、授权、ecom 语义模型发布（方案 C）| `mcp_svc` 权限矩阵 14/14（`SHOW GRANTS` 恰好是 R-42 + Doris 默认项、store 初始化成功、9 个写探针全部被拒）；经 MCP server 的 `query_metric` 与故事线 SQL 11/11 到分一致，已发布的 22 个指标与本地模型一致 |
 | **P3 AgentCore 部署** | Runtime 切换为 `mcp-server/`，接入 secret | SigV4 直连冒烟通过；Gateway token 冒烟通过；CloudWatch 能看到审计日志；冷启动 + 典型查询 < 60 s；`mcp_svc` host 收紧 |
 | **P4 Quick 桌面版** | §8：① 主路径（User auth）+ 备份路径（Service auth，D9）+ Agent | 两条路径都能完成 §10 的「开场 + 第 2 幕」；工具权限按 D7 设置 |
 | **P5 Skills 与彩排** | §9 导入与 adapter；§10 完整彩排 2 次 | Track A、Track B 端到端无人工干预（执行 DDL 除外）；记录每步耗时（经 Gateway 时每次工具调用都含冷启动，预热无效，见 §13）|
@@ -484,7 +505,7 @@ D1–D8 已于 2026-09-26 确定，完整结论见 `requirements.md` 文末。�
 
 - [ ] SG 只增加 **SG 引用**规则；任何 SG 都不出现 `0.0.0.0/0` 入站；`13.125.9.110/32` 保持现状；`doris-mcp-rt` 的出站只有 4 条（§6.4）
 - [ ] 密码只存在于 Secrets Manager 和项目外的 `credentials.env`；`agentcore.json`、脚本、文档、git 历史里都没有明文；每次提交前运行 `scripts/check-secrets.sh`
-- [ ] `mcp_svc` 最小权限、没有 ADMIN、写操作被 Doris 拒绝（P2 权限矩阵）；P3 后 host 收紧为 `'172.31.%'`
+- [ ] `mcp_svc` 最小权限：`SHOW GRANTS` 恰好是 R-42 + Doris 默认项，没有 ADMIN，9 个写探针全部被 Doris 拒绝（P2 T2.3 权限矩阵）；语义层发布不执行任何 GRANT（§6.3）；P3 后 host 收紧为 `'172.31.%'`
 - [ ] Runtime 执行角色、Gateway 服务角色、本机 proxy 用户都按具体 ARN 授权。P0：Gateway 服务角色已满足 ✅；**Runtime 执行角色**是 CDK 默认生成的，带通配权限（§7），**待 P3（T3.1）收紧**
 - [ ] **待 P3 复查**：Gateway `--exception-level DEBUG` 会把错误详情返回给客户端，P3 评估是否关闭（§4.5）
 - [ ] Cognito client secret 只填在 Quick 连接器里；不使用长期静态 token；Cognito 只允许管理员建用户
