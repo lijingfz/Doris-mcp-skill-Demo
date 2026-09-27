@@ -5,12 +5,12 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：P2 执行中（Subagent-driven，implementer / reviewer 全部用 Opus 5.5；计划 `plans/P2-doris.md` 已通过用户 review）。P0、P1 已完成并本地合并到 `main`
-- **进行中**：无（分支 `p2-doris`；T2.1、T2.4、T2.5、T2.2 已完成，T2.3 尚未开始）
-- **下一步**：T2.3 **[GATE]**（`doris/permission_matrix.py`：以 `mcp_svc` 检查 `SHOW GRANTS` 恰好是 R-42（+ Doris 默认项）、库列表、9 张表可读、`ecom` 已发布；GATE 后以 `mcp_svc` 跑 upstream store 初始化（须成功）+ 9 个写探针（须全部被拒），14/14；先给用户看 dry-run，确认后才 `APPLY=1`）。执行顺序 T2.1 ✅ → T2.4 ✅ → T2.5 ✅ → T2.2 ✅ → T2.3 → T2.6 → T2.7；4 个 GATE（T2.1 建 secret —— 已完成、T2.5 root 发布 —— 已完成、T2.2 root 建 `mcp_svc` 并授权 —— 已完成、T2.3 以 `mcp_svc` 写探针）每次都先给用户看 dry-run，确认后才 `APPLY=1`。T2.7 = P1 整体评审 ①–④ + P0 评审 M-2、M-8（纯离线）；P0 评审 M-1 / M-3 / M-4 已写进 T4.1 / T4.4 / T3.4，M-5、M-6、M-7、M-9 不做
+- **进行中**：无（分支 `p2-doris`；T2.1、T2.4、T2.5、T2.2、T2.3 已完成，T2.6 尚未开始）
+- **下一步**：T2.6（以 `mcp_svc` 经 MCP 对账 + P2 验收：`reconcile.py mcp` 以 `mcp_svc` 在进程内起 MCP server，`list_metrics`（22 个与本地一致）+ `query_metric` 与故事线 SQL 11/11 到分一致；全部离线测试）。执行顺序 T2.1 ✅ → T2.4 ✅ → T2.5 ✅ → T2.2 ✅ → T2.3 ✅ → T2.6 → T2.7；4 个 GATE（T2.1 建 secret、T2.5 root 发布、T2.2 root 建 `mcp_svc` 并授权、T2.3 以 `mcp_svc` 写探针）已全部完成，T2.6、T2.7 没有 GATE。T2.7 = P1 整体评审 ①–④ + P0 评审 M-2、M-8（纯离线）；P0 评审 M-1 / M-3 / M-4 已写进 T4.1 / T4.4 / T3.4，M-5、M-6、M-7、M-9 不做
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
 - **阻塞**：无
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp` + CDK 生成的执行角色）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；Gateway `doris-mcp-gw`（target `doris`）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
-- **Doris 变更**：T2.5 以 root 新建库 `system_mcp` 和 3 张表 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom`；workspace `ecom` 的 `semantic_version=2`，active 10 个文件，staging 为空；没有执行任何 GRANT，`ecom` 库未改动。回滚（需 GATE）：root 执行 `DROP DATABASE system_mcp`。T2.2 以 root 新建用户 `'mcp_svc'@'%'`（密码 = Secrets Manager `doris-mcp/mcp_svc`），权限按 R-42：`internal.ecom` SELECT、`internal.system_mcp` SELECT + CREATE（另有 Doris 默认的 `internal.information_schema`、`internal.mysql` SELECT 和默认 workload group `normal` 的 USAGE）；不授予 ADMIN / LOAD / ALTER / DROP；host `'%'` 按 D6，P3 T3.5 收紧为 `'172.31.%'`。回滚（需 GATE）：root 执行 `DROP USER 'mcp_svc'@'%'`。此前 spec 阶段只用 `demo_ro` 做过只读查询
+- **Doris 变更**：T2.5 以 root 新建库 `system_mcp` 和 3 张表 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom`；workspace `ecom` 的 `semantic_version=2`，active 10 个文件，staging 为空；没有执行任何 GRANT，`ecom` 库未改动。回滚（需 GATE）：root 执行 `DROP DATABASE system_mcp`。T2.2 以 root 新建用户 `'mcp_svc'@'%'`（密码 = Secrets Manager `doris-mcp/mcp_svc`），权限按 R-42：`internal.ecom` SELECT、`internal.system_mcp` SELECT + CREATE（另有 Doris 默认的 `internal.information_schema`、`internal.mysql` SELECT 和默认 workload group `normal` 的 USAGE）；不授予 ADMIN / LOAD / ALTER / DROP；host `'%'` 按 D6，P3 T3.5 收紧为 `'172.31.%'`。回滚（需 GATE）：root 执行 `DROP USER 'mcp_svc'@'%'`。T2.3 以 `mcp_svc` 复核权限矩阵 14/14：upstream store 初始化成功（对象都已存在），9 个写探针全部被 Doris 拒绝，没有任何变更。此前 spec 阶段只用 `demo_ro` 做过只读查询
 
 ## 日志
 
@@ -222,3 +222,21 @@
 - Doris 变更：root 新建用户 `'mcp_svc'@'%'`，密码 = Secrets Manager `doris-mcp/mcp_svc`（经管道进入 python，只在内存里填进 SQL，不进命令行参数、文件和输出）；DatabasePrivs = R-42（`internal.ecom` Select、`internal.system_mcp` Select + Create）+ Doris 默认项（`internal.information_schema`、`internal.mysql` Select，workload group `normal` Usage）；没有 ADMIN / LOAD / ALTER / DROP。host `'%'` 按 D6，P3 T3.5 收紧。T2.3 以 `mcp_svc` 身份复核权限矩阵。
 - 回滚（需 GATE）：root 执行 `DROP USER 'mcp_svc'@'%'`。
 - implementer 自查备注（未改代码，均为低风险）：`admin_sql.py` 里 `SHOW GRANTS` 的 execute / fetchall 不在 `except pymysql.MySQLError` 内（失败时会输出未 mask 的 traceback，且 4 条语句已生效）；非数字 `DORIS_PORT` 的 `int()`、非 UTF-8 SQL 文件的 `UnicodeDecodeError` 也会以 traceback 退出；`_mask` 只替换完整密码（Doris 报错若回显截断的语句，密码前缀不会被 mask，语句是白名单内的固定格式，可能性很小）；wrapper 不 `unset` 调用方已导出的 `DORIS_ROOT_PASSWORD` / `DORIS_RO_PASSWORD`（不会输出，只在调用方 shell 先 `set -a; source credentials.env` 时才会传给 python）。
+
+### 2026-09-27 T2.3 `mcp_svc` 权限矩阵（精确权限、store 初始化成功、9 个写探针全部被拒）[GATE]
+- TDD：新建 `doris/test/test_permission_matrix.py`，先红（`Ran 81 tests`、`FAILED (errors=1)`，`No module named 'permission_matrix'`），写 `doris/permission_matrix.py` 后 `doris/test` 共 119 个测试全部通过（新增 39 个）。计划写的是 79 / 117，差的 2 个是 T2.4 评审修复新增的测试。2 个文件与计划逐字节一致；新测试没有额外输出（全量运行时唯一的额外输出仍是 T2.5 记录过的 `test_unparseable_models_are_rejected` 的 upstream ERROR 日志）。
+- 联网前核实：不带 `APPLY=1` 时只打印探针列表，不构造 `DorisStore`，也不执行任何探针（`permission_matrix.py` 第 288–293 行；`store_init` / `run_probe` 只在 `else` 分支里）；import upstream `store.store` / `store.bootstrap` 不会连接 Doris。
+- Step 5 dry-run（`mcp_svc`，凭证来自 Secrets Manager `doris-mcp/mcp_svc`，只执行 SELECT / SHOW）与计划期望逐行一致，exit 0：`connected as 'mcp_svc'@'%'`；`ok    grants: exactly internal.ecom SELECT, internal.system_mcp SELECT+CREATE (+ Doris defaults)`；`ok    databases: ecom, information_schema, mysql, system_mcp`；`ok    select: 9 physical tables of the models`；`ok    semantic store: workspace ecom semantic_version=2, 10 active files`；`info  max_user_connections=100`；DRY-RUN 列出 store_init 和 9 个探针；`4/4 checks pass`。输出里没有 Doris 主机和密码。
+- **用户确认（「可以执行。」）→ Step 6 `APPLY=1 .venv/bin/python doris/permission_matrix.py`**（由主会话以 `mcp_svc` 执行一次），exit 0，与计划期望一致（输出经过滤器屏蔽主机、root 密码和所有 IPv4 地址，客户端地址记为 `<ip>`）：前 6 行同 Step 5；`ok    probe store_init: discover_workspaces -> ecom; CREATE DATABASE/TABLE IF NOT EXISTS + metadata SELECT ok`；9 个写探针全部 `denied`，errno 都是 1105：
+  - `load_ecom`：`LOAD command denied to user 'mcp_svc'@'<ip>' for table 'ecom.dim_brand'`
+  - `load_system_mcp`：`LOAD command denied to user 'mcp_svc'@'<ip>' for table 'system_mcp.workspace_metadata'`
+  - `update_system_mcp`：`LOAD command denied to user 'mcp_svc'@'<ip>' for table 'system_mcp.workspace_metadata'`
+  - `delete_system_mcp`：`LOAD command denied to user 'mcp_svc'@'<ip>' for table 'system_mcp.staging_store_ecom'`
+  - `create_ecom`：`Access denied for user 'mcp_svc' to database 'ecom'`
+  - `drop_ecom`、`drop_system_mcp`：`Access denied; you need (at least one of) the (DROP) privilege(s) for this operation`
+  - `grant`：`Access denied; you need all  [Grant_priv, Select_priv] privilege(s) for this operation`
+  - `admin`：`Access denied; you need (at least one of) the (ADMIN) privilege(s) for this operation`
+  - 汇总：`14/14 checks pass`
+- 结论：R-42 / R-21 验收通过 —— `SHOW GRANTS` 恰好是 R-42 加 Doris 默认项；`mcp_svc` 能以服务账号完成 upstream 语义存储初始化（`CREATE ... IF NOT EXISTS`，对象都已存在）；没有 LOAD、`ecom` 的 CREATE、DROP、GRANT、ADMIN 权限。Doris 4.1 拒绝这些写操作时都返回 1105（不是 MySQL 的 1142 等），要靠消息里的 `denied` 识别，这与 `classify_error` 的处理一致。
+- Doris 无变更（store 初始化的对象都已存在；写探针全部被拒，而且即使被允许也不会改变数据）；没有创建或修改 AWS 资源。P3 T3.5 把 host 收紧为 `'172.31.%'` 后，用本脚本复测。
+- implementer 自查备注（未改代码，均为低风险）：`_brief` 先把消息截断到 160 字符（第 132 行），再由 `emit` 做 mask（第 258 行），主机或密码恰好跨过截断点时，残留的片段不会被 mask；`main()` 只捕获 `pymysql.MySQLError`，其他异常（例如 `SHOW PROPERTY` 的列名不是 `Key` / `Value` 时的 KeyError）会以 traceback 退出，但 `conn.close()` 仍会执行；探针的拒绝消息里有客户端 IP（不是 Doris 主机，脚本不会 mask），写进记录前要替换成 `<ip>`。
