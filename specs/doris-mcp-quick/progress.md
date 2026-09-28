@@ -5,7 +5,7 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P4 进行中**（`plans/P4-quick.md`，分支 `p4-quick`，执行方式：Native（控制方按 TDD 执行，Task 4 Step 2 由一个 Opus 5.5 reviewer 评审整个分支））。P3 已完成（T3.0–T3.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `b4cbbf2`）；P0–P3 的过程见日志
-- **进行中**：Task 4（T4.1 + T4.4）：Step 1 已提交 `quick/P4-guide.md`；从 Step 2（整体评审）继续
+- **进行中**：Task 4（T4.1 + T4.4）：Step 2 整体评审已完成，I-1 / M-1 / M-2 / M-5 前半已修复（`quick/P4-guide.md` 的 A1、A2 和回复模板，计划的 Step 7 第 6 项和 Step 8）；从 Step 3（预检）继续
 - **下一步**：Task 4：Step 1 写 `quick/P4-guide.md` → Step 2 整体评审（opus）→ Step 3 预检 → Step 4 交给用户在 Quick 里操作 40–60 分钟 → Step 5–8 核对、判断、收尾。P4 没有 GATE
 - **注意**：P3 遗留的归属——P3 整体评审 Minor #1、#3、#5、#6 由 design v0.6、RESUME 和 P4 计划关闭（Task 1 Step 1 一起提交），#2 在评审时已更新，#4 和 T3.0 / T3.3 / T3.6 M1、M2 的 mask 遗留由 T4.5 关闭；P0 评审 M-1（scope）→ T4.1，M-3（Quick 侧耗时）→ T4.4 + T4.6。T3.5 之后开发机以 `mcp_svc` 直连 Doris 会 1045，这是预期的，`mcp_svc` 只经 Runtime 检查。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P4 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p4-stage`、`/tmp/p4-replay`、`/tmp/p4-build/` 已在 Task 1 Step 1 删除。**权威版本是 `plans/P4-quick.md` 里嵌入的代码**，用 `/tmp/p4-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节
@@ -663,3 +663,32 @@
 - 从 CloudWatch 取 Gateway `InvokeGateway` Latency（`Method=tools/call`，按工具名分），按「分钟 × 工具」输出调用数、平均和最大毫秒数；≥ 45000 ms 标 WARN（T5.5 决定是否调低 `query_timeout`），≥ 60000 ms 失败。只输出工具名、时间和毫秒数。
 - RED：模块不存在（1 个 ERROR）；GREEN：10 个 OK，`scripts/test` 75 个；突变 m1–m5 5/5 被抓到。
 - 在线只读（`cloudwatch get-metric-data`）：T3.4 的窗口 2026-09-27T13:40Z–14:10Z 是 50 calls in 31 rows，最大 9269 ms（`doris___reload_semantic_layer`），PASS。
+
+### 2026-09-28 P4 整体评审（opus）
+
+- 范围：`main..p4-quick`（96d18ce..fc82e49，5 个提交），加上 Task 4 Step 3–8 的计划文本。评审包经 MASK，IP、主机、https 计数都是 0。reviewer 只读，没有访问 AWS / Doris；只跑了离线测试（161 / 75 / 16 全部通过），并在 /tmp 的副本上试跑了 Step 8 的 a / b / c（8 个锚点各出现 1 次）。
+- 结论：With fixes。0 Critical / 1 Important / 10 Minor。
+- 修复（在交给用户之前；A1 / A2 的观察只能做一次）：
+  - I-1：A1 原来把「详情页没有 scope 栏」和「scope 栏为空」都记「无」，情况 a 就会写「已证实」，但 scope 可能来自用户没打开的编辑页。改为：进编辑页只看不保存，从四种回答里选一种原样照抄（有 scope 栏，值是 X / 有 scope 栏，空 / 编辑页里没有 scope 栏 / 看不到鉴权设置）。只有「空」和「编辑页里没有」算已证实。Step 8 的 `ui_scope` 只接受这四种，`source` 分三种。
+  - M-1（升为 Important：同一处会把没观察到的事写进 design）：A2 读的是登录页地址（authorize 重定向之后），不是 Quick 的 authorize 请求本身。design 的措辞改成「登录页地址带 / 不带 `scope=`」「登录页地址里 `resource`」，并写明依据和前提（假定 Cognito 重定向时原样带上 scope）；「按 PRM」改为「按 Gateway 发布的发现信息（WWW-Authenticate / PRM）」。
+  - M-2（升为 Important：Cognito 登录页的地址常用 `+` 表示空格，指南没写）：A2 补上「`+` 也是空格」。
+  - M-5 前半（升为 Important：Step 8 无条件写「权限按 D7」）：`V` 增加 `perm`，按回复写「权限按 D7」或者写出差异。
+  - 验证：`.superpowers/sdd/P4-quick/step8_check.py`（工作区里，不入库）改之前 18/41，改之后 41/41；「常用测试命令」全部通过；计划的 13 个嵌入块 sha256 不变。
+- 裁定（执行 Step 5–8 时照此处理）：
+  - M-4：Step 7 第 2 项只对照有参照值的数字（逐月 9 行、逐渠道 4 行；如果回答是按月分渠道，只对照每月小程序占比那一列）。其他数字（按月分渠道的明细、9 月同口径对比、订单数占比）只记录，不判断。
+  - M-5 后半：完成标准里的「没有 424」按「424 已记录（如有），留给 T5.5」理解，因为 Step 7 第 4 项是记录后继续。
+  - M-6：Step 6 的连接数多于 1 时，先问用户是否还在用 Quick。只有 Sleep 超过 610 s 才算 P-09 问题，否则记录下来，再等一轮 660 s。
+- Minor（不修，留给 P5 / T5.5）：
+  - M-3：指南里期望的工具顺序没有提到 `get_query_guide` / `list_dimensions_for_metric`。用户照实记录即可，不算异常。
+  - M-7：Step 5 期望输出里，审计记录的工具名不应该带 `doris___` 前缀。只按条数比较，不影响结果。
+  - M-8：`mcp_smoke.py` 的 `--stdio` 模式不遮盖；`--url` 模式只遮整条 URL，单独出现的主机名不遮。T5.5 或下次改这个脚本时处理，先红后绿（fixture：只含主机名的错误）。
+  - M-9：`gw_latency.parse_rows` 假定时间戳是 ISO 格式（`cli_timestamp_format=none` 时会算错），同名的序列会互相覆盖。T5.5 处理，先红后绿（fixture：数字时间戳）。
+  - M-10：提交前的 IP 计数在 `$v` 为空时什么都不输出，应该改成输出 FAIL。
+- 评审没有判断的几项（我的裁定）：
+  - Quick 在哪里显示 scope、Sync 是否总会重新授权：A1 的第四种回答和情况 c 已经覆盖。
+  - Cognito 重定向时是否保留 scope / resource：design 里写明依据是登录页地址，以及这个前提。
+  - CloudTrail `Token_POST` 的字段形状：spec 阶段已只读核对，Step 6 运行时能直接看到。
+  - Gateway 指标的 `Name` 维度：Task 3 Step 5 已对 T3.4 窗口在线核对。
+  - 计划里记录的在线输出：都是本会话实际运行的结果。
+  - 计划和 design §8.1 里的账号 ID：早于 P4，仓库是私有的，而且账号 ID 不是 secret。
+  - upstream 的工具描述：P4 不改 upstream。

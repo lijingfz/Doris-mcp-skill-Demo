@@ -16,10 +16,16 @@
 
 ## Part A：同步 `doris-mcp`（User auth），设置工具权限
 
-1. **Customize → Connectors**，打开 `doris-mcp` 的详情页。先看连接设置里有没有 scope 一栏：有就记下填的值，没有这一栏或者是空的就记「无」（A2 的 scope 是不是来自这里，要靠这一项区分）。然后点 **Sync**。
+1. **Customize → Connectors**，打开 `doris-mcp`，进入它的编辑页（能看到 Client ID、Token URL 这些鉴权设置的那一页）。**只看，不要改，也不要保存**，看完点取消或返回。看有没有 scope 一栏，按原样记下面四种之一（A2 的 scope 是不是来自这里，要靠这一项区分）：
+   - 「有 scope 栏，值是 X」（X 照抄）；
+   - 「有 scope 栏，空」；
+   - 「编辑页里没有 scope 栏」；
+   - 「看不到鉴权设置」（找不到编辑入口，或者编辑页里不显示鉴权设置）。
+
+   然后回到详情页，点 **Sync**。
 2. 如果弹出登录页，**先不要登录**。看浏览器地址栏，只记三项：
-   - `scope=` 的值。`%20` 是空格，`%2F` 是 `/`，例如 `openid%20doris-mcp%2Finvoke` 就是 `openid doris-mcp/invoke`。地址里没有 `scope=` 就记「无」。
-   - 有没有 `resource=`：只记「有」或「无」，不抄它的值。
+   - `scope=` 的值。`%20` 是空格，`+` 也是空格，`%2F` 是 `/`：例如 `openid+doris-mcp%2Finvoke` 和 `openid%20doris-mcp%2Finvoke` 都是 `openid doris-mcp/invoke`。地址里没有 `scope=` 就记「无」。
+   - 登录页地址里有没有 `resource=`：只记「有」或「无」，不抄它的值。
    - `code_challenge_method=` 的值，例如 `S256`。
 
    记完再用 `demo` 用户登录。如果看不到地址栏（比如是应用内窗口），记「看不到地址」。
@@ -102,7 +108,7 @@
 
 ```
 时区：
-A1 连接器设置里的 scope：____（没有或为空记「无」）
+A1 编辑页里的 scope：____（四选一，原样照抄：有 scope 栏，值是 __ / 有 scope 栏，空 / 编辑页里没有 scope 栏 / 看不到鉴权设置）
 A2 登录页：scope=____；resource：有 / 无；code_challenge_method=____（或：Sync 没有要求登录 / 看不到地址）
 A3 doris-mcp 工具数：__；D1 doris-mcp-svc 工具数：__
 权限：已按表设置（是 / 否，差异：）

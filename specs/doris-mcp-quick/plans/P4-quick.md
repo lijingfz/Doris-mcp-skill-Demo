@@ -2293,7 +2293,7 @@ sleep 5; date +%s000 > /tmp/p4-since; sleep 2; date -u -d @$(( $(cat /tmp/p4-sin
 
 > P4 的 AI 侧预检都通过了：Gateway 和 target 都是 READY，经 Gateway 能列出 12 个工具，两条参照查询和指南里的表一致，对账 11/11，权限复核 5/5。
 > 请按 `quick/P4-guide.md` 在 Quick 桌面版里操作（可以在你自己的终端里 `less quick/P4-guide.md` 查看）：
-> - Part A：同步 `doris-mcp`。先记连接器设置里的 scope（A1）；弹出登录页时先不要登录，读地址栏的三项（A2）；确认 12 个工具，按表设置权限；
+> - Part A：同步 `doris-mcp`。先打开连接器的编辑页看 scope 一栏，只看不保存，按指南的四种回答之一记下（A1）；弹出登录页时先不要登录，读地址栏的三项（A2）；确认 12 个工具，按表设置权限；
 > - Part B：建 agent「Doris 专家」，指令粘贴 `quick/agent-instructions.md` 的全文；
 > - Part C：问两个问题，每个问题记五项；
 > - Part D：对 `doris-mcp-svc` 和「Doris 专家（svc）」再做一遍。
@@ -2419,16 +2419,18 @@ exit=0
 
 1. **工具数**：A3、D1 都是 12，而且没有 `doris___net_check`。不是 12：停下来，和用户一起看 Sync 的错误（重新同步 target 需要 GATE，不在本计划内）。
 2. **数字**：两个 agent 的问题 2，逐月（9 行）、逐渠道（4 行）对照指南的参照表，按回答显示的位数比。有任何一个数不一致：停下来，先经 Gateway 重跑 Step 3 的 P1 / P2，确认是数据、语义层还是 agent 用错了指标，和用户商量；不要为了对上数字去改指令。9 月同比没有说明「只到 25 日」、合计行没有同比或客单价，都不算失败，记下即可。
-3. **权限和弹窗**：权限是否按表设置；弹窗次数和用户的选择。agent 在没有被要求时调用了 `doris___reload_semantic_layer`，或者 `execute_query` 写了非只读 SQL：指令问题，记下来留给 T5.5。
+3. **权限和弹窗**：权限是否按表设置（写进 Step 8 的 `perm`）；弹窗次数和用户的选择。agent 在没有被要求时调用了 `doris___reload_semantic_layer`，或者 `execute_query` 写了非只读 SQL：指令问题，记下来留给 T5.5。
 4. **424 和报错**：有的话，对照 Step 5 `gw_latency` 那一分钟的最大耗时。记进结论，留给 T5.5（`query_timeout`）。
 5. **连接信息**：答案里出现主机地址、IP、端口或账号（用户已换成 `<已遮盖>`）：违反硬约束 4，指令问题，记下来留给 T5.5。
-6. **scope（M-1）**，`ui_scope` 是 A1 记的连接器设置里的 scope：
-   - **a**：A2 的 `scope=` 里有 `doris-mcp/invoke`。`ui_scope` 是「无」：「Quick 按 PRM 请求 scope」**已证实**。`ui_scope` 填了值：只能说 Quick 请求了 scope，分不清来自设置还是 PRM。两种情况都说明 token 的 scope 是请求来的，不是 Cognito 默认授予的。
-   - **b**：A2 是「无」（请求不带 scope）：Quick 没有按 PRM 请求 scope，token 的 scope 来自 Cognito 默认授予 client A 的全部 scope。功能不受影响。
+6. **scope（M-1）**。A2 读的是登录页的地址（Cognito 的 authorize 端点重定向之后的页面），不是 Quick 发出的 authorize 请求本身。下面的判断假定 Cognito 重定向时原样带上请求里的 `scope`、不会自己补上；这一点没有单独验证，所以 design 里写明依据是登录页地址。`ui_scope` 是 A1 的四种回答之一，原样照抄：
+   - **a**：A2 的 `scope=` 里有 `doris-mcp/invoke`：Quick 请求了 scope，token 的 scope 不是 Cognito 默认授予的。scope 从哪里来，看 `ui_scope`：
+     - 「有 scope 栏，空」或「编辑页里没有 scope 栏」：「Quick 按 Gateway 发布的发现信息（WWW-Authenticate / PRM）请求 scope」**已证实**；
+     - 「有 scope 栏，值是 X」或「看不到鉴权设置」：只能说 Quick 请求了 scope，分不清来自连接器设置还是发现信息。
+   - **b**：A2 是「无」（登录页地址不带 `scope=`）：Quick 没有请求 scope，token 的 scope 来自 Cognito 默认授予 client A 的全部 scope。功能不受影响。
    - **b′**：A2 有 `scope=`，但里面没有 `doris-mcp/invoke`，而工具调用却成功了：和 Gateway 的 `allowedScopes` 矛盾。**停下来**和用户商量，不写结论。
    - **c**：「Sync 没有要求登录」或「看不到地址」：仍**未证实**，写明原因；T5.3 导入 skills 时如果再次要求登录，按 A2 的方法再看一次。
 
-   `resource=` 和 `code_challenge_method=` 只记录，不影响判断。
+   `resource=`（登录页地址里有 / 无）和 `code_challenge_method=` 只记录，不影响判断。
 
 1、2 或 6 的 b′ 要停下来的，不做 Step 8。其他问题都记录，进入 Step 8。
 
@@ -2444,10 +2446,11 @@ CASE = ""  # "a" / "b" / "c"（Step 7 第 6 项）
 V = {
     "date": "",      # 用户操作的日期（UTC），例如 2026-09-28
     "scope": "",     # a：A2 的 scope 值（解码后），例如 openid doris-mcp/invoke
-    "resource": "",  # a、b：A2 的 resource，「有」或「无」
+    "resource": "",  # a、b：A2 登录页地址里有没有 resource，「有」或「无」
     "method": "",    # a、b：A2 的 code_challenge_method，例如 S256
-    "ui_scope": "",  # a、b：A1 连接器设置里的 scope，没有或为空写「无」
+    "ui_scope": "",  # a、b：A1 的回答原样照抄，四选一：有 scope 栏，值是 X / 有 scope 栏，空 / 编辑页里没有 scope 栏 / 看不到鉴权设置
     "why": "",       # c：原因，例如「Sync 没有要求登录」
+    "perm": "",      # 回复里的「权限」：已按表设置写「按 D7」，否则写差异，例如「execute_query 是 Always Allow」
     "q_total": "",   # 每个问题的总耗时，例如「Doris 专家」18 s / 41 s，「Doris 专家（svc）」16 s / 39 s
     "tool_max": "",  # Step 5 gw_latency 的 max（ms），只写数字
     "over45": "",    # Step 5 gw_latency 里 ≥ 45000 ms 的行数，只写数字
@@ -2455,24 +2458,38 @@ V = {
 }
 NEED = {"a": ["scope", "resource", "method", "ui_scope"], "b": ["resource", "method", "ui_scope"], "c": ["why"]}
 assert CASE in NEED, "CASE must be a, b or c (b' stops at Step 7)"
-bad = [k for k in ["date", "q_total", "tool_max", "over45", "feel"] + NEED[CASE]
+bad = [k for k in ["date", "perm", "q_total", "tool_max", "over45", "feel"] + NEED[CASE]
        if not V[k].strip() or "…" in V[k] or "____" in V[k]]
 assert not bad, f"fill in: {bad}"
 assert V["tool_max"].isdigit() and V["over45"].isdigit(), "tool_max / over45: digits only"
+UI_EMPTY, UI_UNSEEN, UI_VALUE = ("有 scope 栏，空", "编辑页里没有 scope 栏"), "看不到鉴权设置", "有 scope 栏，值是 "
+u = V["ui_scope"].strip()
+assert CASE == "c" or u in UI_EMPTY or u == UI_UNSEEN or (u.startswith(UI_VALUE) and u[len(UI_VALUE):].strip()), \
+    "ui_scope: one of the four A1 answers, verbatim"
 
 d = V["date"]
+FOUND = "Gateway 发布的发现信息（WWW-Authenticate / PRM）"
 if CASE == "a":
-    source = ("连接器设置里没有填 scope，所以是 Quick 按 PRM 请求的" if V["ui_scope"] == "无"
-              else f"连接器设置里填了 `{V['ui_scope']}`，所以分不清来自设置还是 PRM")
-    m1 = f"Quick 的 authorize 请求带 `scope={V['scope']}`，{source}"
+    if u in UI_EMPTY:
+        source = (f"{'连接器鉴权设置里的 scope 栏是空的' if u == UI_EMPTY[0] else '连接器的鉴权设置里没有 scope 栏'}，"
+                  f"所以「Quick 按 {FOUND}请求 scope」**已证实**")
+    elif u == UI_UNSEEN:
+        source = f"看不到连接器的鉴权设置，所以分不清 scope 来自设置还是 {FOUND}"
+    else:
+        source = f"连接器的鉴权设置里填了 `{u[len(UI_VALUE):].strip()}`，所以分不清 scope 来自设置还是 {FOUND}"
+    m1 = (f"登录页地址（authorize 重定向后）带 `scope={V['scope']}`：Quick 请求了 scope，"
+          f"token 的 scope 不是 Cognito 默认授予的；{source}")
 elif CASE == "b":
-    m1 = "Quick 的 authorize 请求不带 scope，token 的 scope 来自 Cognito 默认授予 client A 的全部 scope"
+    m1 = ("登录页地址（authorize 重定向后）不带 `scope=`：Quick 没有请求 scope，"
+          "token 的 scope 来自 Cognito 默认授予 client A 的全部 scope")
 else:
     m1 = f"仍**未证实**（{V['why']}）"
-params = "" if CASE == "c" else f"`resource`：{V['resource']}；`code_challenge_method={V['method']}`。"
+params = "" if CASE == "c" else (f"登录页地址里 `resource`：{V['resource']}；`code_challenge_method={V['method']}`。"
+                                 "依据是登录页的地址，假定 Cognito 重定向时原样带上 authorize 请求里的 `scope`。")
 later = "T5.3 导入 skills 时如果再次要求登录，按 `quick/P4-guide.md` A2 的方法再看一次。" if CASE == "c" else ""
 t55 = "T5.5 不必为此调整 `query_timeout`" if V["over45"] == "0" else "T5.5 把 `query_timeout` 调到 40–45 s"
 lat = f"每个问题的总耗时 {V['q_total']}；单次工具调用最长 {V['tool_max']} ms，≥ 45 s 的 {V['over45']} 次"
+perm = "权限按 D7" if V["perm"].strip() == "按 D7" else f"权限与 D7 不同：{V['perm'].strip()}"
 
 EDITS = [
     ("（Quick 有没有这样做**未证实**，见下面 P0 实测的 scope 一条）",
@@ -2483,7 +2500,7 @@ EDITS = [
      f"    - 结论（T4.1 实测，{d}）：{m1}。{params}{later}结果是什么都不影响功能。"),
     ("但「Quick 按 PRM 请求 scope」**未证实**（v0.6 更正，P0 评审 M-1：请求不带 scope 时 Cognito 会授予 client 的全部 scope），"
      "T4.1 用浏览器 authorize URL 确认。",
-     "「Quick 按 PRM 请求 scope」：" + (f"{m1}，T5.3 再看。" if CASE == "c" else f"T4.1 实测，{m1}（P0 评审 M-1 关闭）。")),
+     "scope 从哪里来：" + (f"{m1}，T5.3 再看。" if CASE == "c" else f"T4.1 实测，{m1}（P0 评审 M-1 关闭）。")),
     ("端到端耗时没有在 Quick 侧测量（P0 评审 M-3），由 P4 补上：T4.4 用秒表记每个问题的总耗时，"
      "T4.6 的 `scripts/gw_latency.py` 从 Gateway 指标取每次工具调用的耗时。",
      f"✅ Quick 侧耗时（T4.4 / T4.6 实测，{d}，P0 评审 M-3 关闭）：{lat}（秒表 + `scripts/gw_latency.py`）。"),
@@ -2496,7 +2513,7 @@ EDITS = [
      "整体评审（opus）已完成；"),
     ("\n| v0.6 |",
      f"\n| v0.7 | P4 实测（{d}）：① scope（P0 评审 M-1）：{m1}（§4.5、§13）。② Quick 侧耗时（P0 评审 M-3）：{lat}；"
-     f"{t55}（§4.4、§13）。③ `doris-mcp`、`doris-mcp-svc` 两个连接器各 12 个工具，权限按 D7；两个「Doris 专家」agent 的"
+     f"{t55}（§4.4、§13）。③ `doris-mcp`、`doris-mcp-svc` 两个连接器各 12 个工具，{perm}；两个「Doris 专家」agent 的"
      "「开场 + 第 2 幕」数字与参照值一致 |\n| v0.6 |"),
 ]
 p = pathlib.Path("specs/doris-mcp-quick/design.md")
