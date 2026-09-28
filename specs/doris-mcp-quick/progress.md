@@ -4,9 +4,9 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：**P4 进行中**（`plans/P4-quick.md`，分支 `p4-quick`，执行方式：Native（控制方按 TDD 执行，Task 4 Step 2 由一个 Opus 5.5 reviewer 评审整个分支））。P3 已完成（T3.0–T3.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `b4cbbf2`）；P0–P3 的过程见日志
-- **进行中**：Task 4（T4.1 + T4.4）：Step 2 整体评审已完成，I-1 / M-1 / M-2 / M-5 前半已修复（`quick/P4-guide.md` 的 A1、A2 和回复模板，计划的 Step 7 第 6 项和 Step 8）；从 Step 3（预检）继续
-- **下一步**：Task 4：Step 1 写 `quick/P4-guide.md` → Step 2 整体评审（opus）→ Step 3 预检 → Step 4 交给用户在 Quick 里操作 40–60 分钟 → Step 5–8 核对、判断、收尾。P4 没有 GATE
+- **阶段**：**P4 已完成**（T4.1、T4.3–T4.6，分支 `p4-quick`，整体评审已完成），合并方式和是否推送由用户决定（D8）。P3 已完成（T3.0–T3.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `b4cbbf2`）；P0–P4 的过程见日志
+- **进行中**：无
+- **下一步**：用户决定 `p4-quick` 的合并方式和是否推送（D8）；然后编写 `plans/P5-skills.md`。留给 P5：① T5.3 导入 skills 时如果再次要求登录，按 `quick/P4-guide.md` A2 再看一次 scope（M-1 仍是情况 c）；② T5.4 每轮之后跑 `conns`（连接预算）；③ T5.5：`query_timeout` 不必调整（两个窗口 ≥ 45 s 都是 0 次）；Gateway description 和 `exceptionLevel=DEBUG`；是否遮盖 2003 错误里的 Doris 主机地址；审计里 `query_metric` 补记 `where` / `having`；失败调用的 `error` 不应为 None；`query_metric` 按天过滤可能落到月粒度（`_build_dimension_map` 的假设，未验证）；agent 指令写明可用的时间粒度（问题 2 前试过 `metric_time__year`，4 次失败）；演示手册写明：桌面版刷新不了旧连接器时在网页版新建连接器，彩排 / 演示时按 D7 把 `execute_query` 设为 Always Allow；P4 评审 Minor M-3、M-7、M-8、M-9、M-10
 - **注意**：P3 遗留的归属——P3 整体评审 Minor #1、#3、#5、#6 由 design v0.6、RESUME 和 P4 计划关闭（Task 1 Step 1 一起提交），#2 在评审时已更新，#4 和 T3.0 / T3.3 / T3.6 M1、M2 的 mask 遗留由 T4.5 关闭；P0 评审 M-1（scope）→ T4.1，M-3（Quick 侧耗时）→ T4.4 + T4.6。T3.5 之后开发机以 `mcp_svc` 直连 Doris 会 1045，这是预期的，`mcp_svc` 只经 Runtime 检查。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P4 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p4-stage`、`/tmp/p4-replay`、`/tmp/p4-build/` 已在 Task 1 Step 1 删除。**权威版本是 `plans/P4-quick.md` 里嵌入的代码**，用 `/tmp/p4-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -692,3 +692,38 @@
   - 计划里记录的在线输出：都是本会话实际运行的结果。
   - 计划和 design §8.1 里的账号 ID：早于 P4，仓库是私有的，而且账号 ID 不是 secret。
   - upstream 的工具描述：P4 不改 upstream。
+
+### 2026-09-28 P4 Task 4（T4.1 + T4.4）：Quick 桌面版接入与「开场 + 第 2 幕」
+
+- 预检（Step 3）：Gateway 和 target 都是 READY；经 Gateway 列出 12 个工具；两条参照查询和指南里的表一致；对账 11/11；权限复核 5/5。
+- 窗口 1（2026-09-28T00:57:09Z – 03:09:34Z，网页版）：
+  - 用户回复：A1 空；A2「Sync 没有要求登录」；A3 12 个工具，D1 12 个；权限已按表设置；「Doris 专家」问题 1 约 5 s（`check_service_health`），问题 2 约 15 s；svc「同上」；没有答案原文。
+  - 核对：审计 36 条（35 ok，1 failed：02:53:57 `execute_query`，error=None，用户没见到弹窗）；`gw_latency` 39 calls = 36 + 3 次旧的 `doris___net_check`（02:17、02:18、02:29，Gateway 以 UserErrors 拒绝，约 16 ms）；max 9473 ms，≥ 45 s 0 次；连接数事后 1，660 s 后 1。
+  - CloudTrail `Token_POST`：只有 client B（client_credentials）；client A 自 09-26 起没有 token 请求。说明窗口内只走了 Service auth，User auth（主路径，D9）没有跑到，也没有答案可对账，所以开了第二个窗口。
+- 窗口 2（03:27:06Z – 09:01:11Z，桌面版为主）：
+  - 桌面版的「Doris 专家」调用 `doris___net_check` 两次都返回 HTTP 400（「参数无效」），Gateway 上没有对应的 Invocation / UserErrors：桌面版的 `doris-mcp` 还停在 T0.7 的工具列表，而且刷新不了，Quick 在本地就拒绝了。用户在网页版新建了配置相同、名字不同的连接器 `Doris-Desktop-MCP`（User auth，client A；新建时出现了登录页），桌面版能看到 12 个工具。agent 只关联它之后，问题 1 正常：06:21 `check_service_health` + `list_databases`，4 个库和计划一致；语义层尚未加载（按需加载）。
+  - 问题 2（08:28–08:31，桌面版）：工具顺序 `list_metrics` → `query_metric` ×3（按月）→ `execute_query` SELECT ×2。
+    - 对账：9 个月的 GMV、订单数、客单价、小程序占比，1–8 月的同比，以及合计行，都和参照值一致。
+    - 9 月同比按相同天数（2025-09-01..25）用 SQL 算出 +21.9%，同时引用了语义层整月的 −0.4%（参照值 −0.44%）。
+    - 渠道只给了小程序（32.3%），其他渠道没有显示，不算不一致。
+    - 答案里没有连接信息，也没有 424。
+  - 权限：`Doris-Desktop-MCP` 的 `execute_query` 原为 Always Allow（D7 的彩排 / 演示设置），所以没有弹窗；改为 Ask Each Time 后桌面版会弹出允许 / 拒绝（用户确认）。
+  - 耗时：用户没有计时，按工具调用时间估算：问题 1 的工具调用约 12 s，问题 2 约 2–3 分钟。用户另测 SELECT 1，在 Doris 侧 2 ms。每次 tools/call 都新开一个 Runtime session（design §4.4 已写明），所以在 Gateway 上每次 5–10 s。
+  - 核对：
+    - 审计 66 条（62 ok；4 failed，都是 06:45 用 `metric_time__year` 分组的 `query_metric`，error=None），0 条无法解析。
+    - `gw_latency`（03:28–09:02）：66 calls / 29 rows，max 9863 ms（07:00 `list_dimensions_for_metric`），≥ 45 s 0 次；Gateway 0 SystemErrors。
+    - 连接数事后 2（Query 1、Sleep 1，最长 idle 239 s），660 s 后 16（Query 1、Sleep 15，3 台主机，最长 idle 587 s）：窗口结束后用户在 09:04–09:11 又调用了 19 次，全部 ok。从最后一次调用起 660 s 后是 2：本次 `conns` 的 Query，加上 09:14:44 那次 `conns` 留下的 Sleep（idle 519 s < 610 s）。用户的连接都已回收，两次都没有超过 610 s 的 Sleep。
+  - CloudTrail `Token_POST`：client A authorization_code 03h、04h、05h 各 1 次（Quick 的 UA，resource=True，token 请求不带 scope）；client B client_credentials 04h 1 次（Quick 的 UA，scope=doris-mcp/invoke，resource=True）；09h 的 client B（curl）是 AI 的 `get-gw-token.sh`。
+- scope（M-1）：情况 c，仍未证实。`doris-mcp` 的 Sync 没有要求登录；新建 `Doris-Desktop-MCP` 时出现了登录页，但没有读地址。T5.3 再看。
+- design v0.7：
+  - §4.5 / §13：scope 的结论。
+  - §4.4 / §13：Quick 侧耗时，P0 评审 M-3 关闭。
+  - 版本行和修订记录 v0.7：三个连接器各 12 个工具，权限按 D7；「Doris 专家」桌面版数字一致；「Doris 专家（svc）」只在网页版验证了工具调用，答案没有对账；旧连接器刷新不了工具列表。
+  - tasks.md 勾选 T4.1、T4.4。
+- 裁定：
+  - svc 不在桌面版重跑（认证方式不影响数字，D9 以 User auth 为主路径，用户要求收尾）。
+  - `Doris-Desktop-MCP` 代替 `doris-mcp` 计入 T4.1 / T4.4。
+  - 其他渠道没有显示不算不一致。
+  - 相同天数口径的同比算一致。
+- 留给 P5：见「当前状态」的「下一步」。
+- 只读调用：sts、`get-gateway` / `get-gateway-target`、Cognito（`get-gw-token.sh`）、Gateway MCP、SigV4 `InvokeAgentRuntime`、`logs filter-log-events`、`cloudwatch get-metric-data` / `list-metrics`、`cloudtrail lookup-events`、check-secrets 的 `get-secret-value`。P4 没有 GATE，没有任何写操作。
