@@ -5,7 +5,7 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P4 进行中**（`plans/P4-quick.md`，分支 `p4-quick`，执行方式：Native（控制方按 TDD 执行，Task 4 Step 2 由一个 Opus 5.5 reviewer 评审整个分支））。P3 已完成（T3.0–T3.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `b4cbbf2`）；P0–P3 的过程见日志
-- **进行中**：Task 3（T4.6）已完成；Task 4（T4.1 + T4.4）从 Step 1 开始
+- **进行中**：Task 4（T4.1 + T4.4）：Step 1 已提交 `quick/P4-guide.md`；从 Step 2（整体评审）继续
 - **下一步**：Task 4：Step 1 写 `quick/P4-guide.md` → Step 2 整体评审（opus）→ Step 3 预检 → Step 4 交给用户在 Quick 里操作 40–60 分钟 → Step 5–8 核对、判断、收尾。P4 没有 GATE
 - **注意**：P3 遗留的归属——P3 整体评审 Minor #1、#3、#5、#6 由 design v0.6、RESUME 和 P4 计划关闭（Task 1 Step 1 一起提交），#2 在评审时已更新，#4 和 T3.0 / T3.3 / T3.6 M1、M2 的 mask 遗留由 T4.5 关闭；P0 评审 M-1（scope）→ T4.1，M-3（Quick 侧耗时）→ T4.4 + T4.6。T3.5 之后开发机以 `mcp_svc` 直连 Doris 会 1045，这是预期的，`mcp_svc` 只经 Runtime 检查。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P4 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p4-stage`、`/tmp/p4-replay`、`/tmp/p4-build/` 已在 Task 1 Step 1 删除。**权威版本是 `plans/P4-quick.md` 里嵌入的代码**，用 `/tmp/p4-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节
