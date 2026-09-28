@@ -9,8 +9,9 @@ DORIS_SECRET_ID=doris-mcp/mcp_svc (or DORIS_USER/DORIS_PASSWORD).
 With --url the read-only checks go through the deployed Runtime's execute_query tool over SigV4
 (AWS_* credentials; scripts/agentcore_client.py), i.e. as mcp_svc from the VPC: after P3 / T3.5 that
 is the only place the account can log in from. The probes need a direct connection (APPLY=1 refuses
---url); the URL is masked as *** and IPv4 addresses as <ip>. --expect-host H adds a check that the
-connected identity is exactly 'mcp_svc'@'H'.
+--url); the URL is masked as *** and IPv4 addresses as <ip>, in this script's lines and in the MCP
+SDK's own log lines (scripts/redact.py). --expect-host H adds a check that the connected identity is
+exactly 'mcp_svc'@'H'.
 Read-only checks: SHOW GRANTS equals EXPECTED_GRANTS exactly (R-42), SHOW DATABASES equals
 EXPECTED_DATABASES, every physical table of the models is readable, the workspace has a metadata
 row (else upstream would INSERT it, which needs LOAD_PRIV) and active files.
@@ -37,6 +38,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence, TextIO
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "mcp-server" / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))  # redact, agentcore_client
 MODELS_DIR = ROOT / "doris" / "semantic" / "ecom"
 
 import pymysql  # noqa: E402
@@ -46,7 +48,8 @@ from store.bootstrap import collect_physical_tables  # noqa: E402
 from store.store import (  # noqa: E402
     DorisStore, clear_service_credentials, set_doris_endpoint, set_service_credentials)
 
-MASK = "***"
+import redact  # noqa: E402
+
 EXPECTED_USER = "mcp_svc"
 EXPECTED_GRANTS: dict[str, dict[str, set[str]]] = {
     "DatabasePrivs": {
@@ -63,7 +66,6 @@ DENIED_ERRNOS = frozenset({1044, 1142, 1143, 1227})
 DENIED_1105 = ("access denied", "command denied")  # Doris 4.1 refuses privileges with errno 1105 (T2.3)
 _WORKSPACE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")  # upstream workspace/create rule
 _LITERAL_RE = re.compile(r"^[A-Za-z0-9_]+$")  # what RuntimeCursor inlines without quoting rules
-_IPV4_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
 _STORE_LOGGER = "doris_new_mcp.store"
 
 
@@ -138,14 +140,14 @@ def classify_error(error: pymysql.MySQLError) -> str:
     return "error"
 
 
-Secrets = Iterable["str | re.Pattern[str]"]  # literal values -> ***, patterns (IPv4) -> <ip>
+Secrets = Iterable[str]  # literal values -> ***; IPv4 addresses -> <ip> regardless (redact.redact)
 
 
 def _brief(error: pymysql.MySQLError, secrets: Secrets) -> str:
     """errno + message, masked before it is cut (a cut secret no longer matches the mask)."""
     errno = error.args[0] if error.args else "?"
     message = str(error.args[1]) if len(error.args) > 1 else str(error)
-    return f"{errno} {_mask(message.replace('errCode = 2, detailMessage = ', ''), secrets)[:160]}"
+    return f"{errno} {redact.redact(message.replace('errCode = 2, detailMessage = ', ''), secrets)[:160]}"
 
 
 def _rows(cur: Any, sql: str, params: Sequence[Any] | None = None) -> list[dict[str, Any]]:
@@ -243,15 +245,6 @@ def upstream_store_init(settings: Settings, workspace: str) -> tuple[bool, str]:
         clear_service_credentials()
 
 
-def _mask(text: str, secrets: Secrets) -> str:
-    for s in secrets:
-        if isinstance(s, re.Pattern):
-            text = s.sub("<ip>", text)
-        elif s:
-            text = text.replace(s, MASK)
-    return text
-
-
 def _inline(sql: str, params: Sequence[Any] | None) -> str:
     """Fill %s with quoted literals; only plain identifiers (the workspace name) are accepted."""
     if not params:
@@ -339,9 +332,6 @@ class RuntimeConnection:
 
 def _runtime_connection(url: str, region: str | None) -> RuntimeConnection:
     """SigV4 MCP session to a Runtime invoke URL (inbound auth AWS_IAM), see scripts/agentcore_client.py."""
-    scripts = str(ROOT / "scripts")
-    if scripts not in sys.path:
-        sys.path.insert(0, scripts)
     import agentcore_client
     return RuntimeConnection(agentcore_client.sigv4_client(url, region))
 
@@ -371,7 +361,8 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         return 2
     settings: Settings | None = None
     if args.url:
-        secrets: list[str | re.Pattern[str]] = [args.url, env.get("DORIS_HOST", ""), _IPV4_RE]
+        secrets = [args.url, env.get("DORIS_HOST", "")]
+        redact.redact_sdk_logs(secrets, stream=err)  # the MCP SDK logs transport errors itself, URL included
     else:
         try:
             settings = load_settings(env)
@@ -382,7 +373,7 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
     tables = sorted(collect_physical_tables(args.models))
 
     def emit(text: str, stream: TextIO = out) -> None:
-        print(_mask(text, secrets), file=stream)
+        print(redact.redact(text, secrets), file=stream)
 
     try:
         if args.url:
@@ -458,7 +449,9 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
     finally:
         try:
             conn.close()
-        except Exception as e:  # noqa: BLE001 - e.g. --url: the session DELETE failed; the result stands
+        except Exception as e:  # noqa: BLE001 - the result stands
+            # --url: a mid-session transport error (e.g. a 403 once the credentials expire), re-raised by
+            # __aexit__. A failed session DELETE is only logged by the SDK (masked: redact_sdk_logs).
             emit(f"WARN: close: {type(e).__name__}: {e}", err)
     passed = sum(r.ok for r in results)
     emit(f"{passed}/{len(results)} checks pass")

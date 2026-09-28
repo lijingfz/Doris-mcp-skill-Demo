@@ -13,6 +13,9 @@ Examples:
 
 The bearer token is read from the named environment variable and never printed. `time` and `conns`
 print status, timings, error codes and counts only: never tool output, SQL results, hosts or statements.
+A session or call that raises is one FAIL line with the URL and the token masked as *** and IPv4
+addresses as <ip>; with --url the MCP SDK's own log lines go to stderr masked the same way
+(scripts/redact.py).
 Exit code: 0 on success, 1 when a tool call returns an error or a check fails, 2 on a bad calls file.
 """
 
@@ -29,6 +32,8 @@ from pathlib import Path
 
 from fastmcp import Client
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+
+import redact  # scripts/ is on sys.path when this file is run as a script
 
 DEFAULT_CALLS = Path(__file__).resolve().parent / "smoke_calls.json"
 
@@ -300,13 +305,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 async def main(argv: list[str] | None = None, client_factory=build_client) -> int:
     args = parse_args(argv)
+    hidden = [args.url, os.environ.get(args.bearer_env, "") if args.bearer_env else ""]
+    if args.url:
+        redact.redact_sdk_logs(hidden)
     start = time.monotonic()
-    if args.command == "time":
-        rc = await cmd_time(args, client_factory)
-    else:
-        async with client_factory(args) as client:
-            print(f"connected+initialized in {round((time.monotonic() - start) * 1000)} ms")
-            rc = await COMMANDS[args.command](client, args)
+    try:
+        if args.command == "time":
+            rc = await cmd_time(args, client_factory)
+        else:
+            async with client_factory(args) as client:
+                print(f"connected+initialized in {round((time.monotonic() - start) * 1000)} ms")
+                rc = await COMMANDS[args.command](client, args)
+    except Exception as e:  # noqa: BLE001 - one masked line instead of a traceback naming the URL
+        print(f"FAIL: {type(e).__name__}: {redact.redact(str(e), hidden)}")
+        rc = 1
     print(f"total {round((time.monotonic() - start) * 1000)} ms")
     return rc
 

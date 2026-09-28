@@ -420,6 +420,11 @@ class Main(unittest.TestCase):
 class Remote(unittest.TestCase):
     """mcp --url: the deployed Runtime over SigV4 (P3 / T3.3); the reference SQL still runs on pymysql."""
 
+    def setUp(self):
+        sdk_logger = logging.getLogger("mcp")  # --url installs a redacting handler on it
+        self.enterContext(mock.patch.object(sdk_logger, "handlers", []))
+        self.enterContext(mock.patch.object(sdk_logger, "propagate", True))
+
     def _client(self):
         names = sorted(local_metric_names(MODELS))
         return FakeClient({"list_metrics": ok([{"name": n, "description": "d"} for n in names],
@@ -474,9 +479,31 @@ class Remote(unittest.TestCase):
         self.assertNotIn("Traceback", out + err)
         self.assertTrue(conn.closed)
 
+    def test_remote_errors_mask_the_url_and_ipv4_addresses(self):
+        def remote(url, _region):
+            raise RuntimeError(f"POST {url} failed; Doris at 198.51.100.9 refused")
+
+        rc, out, err, _ = run_main(["mcp", "--url", RUNTIME_URL], conn=FakeConn([YTD_ROW]), remote=remote)
+        self.assertEqual(rc, 1)
+        self.assertEqual([line for line in err.splitlines() if line.startswith("FAILED:")],
+                         ["FAILED: RuntimeError: POST *** failed; Doris at <ip> refused"])
+        self.assertNotIn("amazonaws.com", out + err)
+
+    def test_sdk_log_lines_are_masked(self):
+        client = self._client()
+
+        def remote(url, _region):
+            logging.getLogger("mcp.client.streamable_http").error("Error in post_writer: POST %s", url)
+            return client
+
+        rc, out, err, _ = run_main(["mcp", "--url", RUNTIME_URL, "--case", "ytd_totals"], conn=FakeConn([YTD_ROW]),
+                                   remote=remote)
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("ERROR mcp.client.streamable_http: Error in post_writer: POST ***\n", err)
+        self.assertNotIn("amazonaws.com", out + err)
+
     def test_default_remote_client_is_the_sigv4_client(self):
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import agentcore_client
+        import agentcore_client  # reconcile puts scripts/ on sys.path
 
         with mock.patch.object(agentcore_client, "sigv4_client", return_value="client") as sigv4:
             self.assertEqual(reconcile._remote_client(RUNTIME_URL, "us-east-1"), "client")

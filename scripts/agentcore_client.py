@@ -4,9 +4,10 @@
     async with sigv4_client(runtime_url) as client:
         await client.list_tools()
 
-Credentials come from the default botocore chain (here: the AWS_* environment variables) and are
-re-read before each request, so refreshed session credentials are picked up. The region comes from
-the URL unless given: this dev box sets AWS_DEFAULT_REGION=us-west-2, the Runtime is in us-east-1.
+Credentials come from the default botocore chain (here: the AWS_* environment variables), resolved
+once when the client is built: a refreshable provider (SSO, assume-role) refreshes itself before each
+signature, static AWS_* keys stay fixed for the client's lifetime. The region comes from the URL
+unless given: this dev box sets AWS_DEFAULT_REGION=us-west-2, the Runtime is in us-east-1.
 One Client is one MCP session (Mcp-Session-Id), i.e. one Runtime microVM; the Gateway opens a new
 session for every tool call.
 """
@@ -59,5 +60,7 @@ class SigV4Auth(httpx.Auth):
 def sigv4_client(url: str, region: str | None = None, timeout: float = 90.0) -> Client:
     region = region or region_from_url(url)
     if not region:
-        raise ValueError(f"cannot tell the region from {url!r}; pass --region")
+        # Not the URL itself: callers print this message, and the URL may carry a host.
+        raise ValueError("cannot tell the region from the URL (not https://bedrock-agentcore.<region>"
+                         ".amazonaws.com/...); pass --region")
     return Client(StreamableHttpTransport(url, auth=SigV4Auth(region)), timeout=timeout)

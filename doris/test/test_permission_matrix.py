@@ -309,6 +309,13 @@ class DryRun(unittest.TestCase):
         self.assertIn("ok    databases", out)
         self.assertIn("3/4 checks pass", out)
 
+    def test_the_client_address_in_a_denial_is_masked(self):
+        # Doris names the client, 'mcp_svc'@'<client address>'; that is not DORIS_HOST (T3.0 minor).
+        rc, out, _, _, _ = run_main(conn=FakeDoris({"SELECT 1 FROM internal.ecom.fact_refund": denied("SELECT")}))
+        self.assertEqual(rc, 1)
+        self.assertIn("FAIL  select: internal.ecom.fact_refund: 1105 SELECT command denied to user "
+                      "'mcp_svc'@'<ip>'", out)
+
     def test_long_messages_are_masked_before_they_are_cut(self):
         # Cutting first would keep a prefix of the password that the mask no longer recognises.
         leak = pymysql.err.OperationalError(1105, "SELECT command denied " + "x" * 130 + PASSWORD)
@@ -513,17 +520,26 @@ def runtime_server(doris: FakeDoris) -> FastMCP:
 class RemoteRuntime(unittest.TestCase):
     """--url: the read-only checks through the deployed Runtime, as mcp_svc from the VPC (P3 / T3.5)."""
 
-    def run_remote(self, argv=(), doris=None, apply=False, remote_error=None, close_error=None):
+    def setUp(self):
+        sdk_logger = logging.getLogger("mcp")  # --url installs a redacting handler on it
+        self.enterContext(mock.patch.object(sdk_logger, "handlers", []))
+        self.enterContext(mock.patch.object(sdk_logger, "propagate", True))
+
+    def run_remote(self, argv=(), doris=None, apply=False, remote_error=None, close_error=None, url=RUNTIME_URL,
+                   on_connect=None):
         doris = doris or FakeDoris({"SELECT CURRENT_USER()": [{"identity": VPC_IDENTITY}]})
         remote_calls = []
 
-        class CloseFails(Client):  # e.g. the session DELETE hits a transport error after the checks
+        class CloseFails(Client):  # a mid-session transport error (e.g. a 403 once the credentials expire),
+            # re-raised by __aexit__; a failed session DELETE is only logged by the SDK
             async def __aexit__(self, *exc_info):
                 await super().__aexit__(*exc_info)
                 raise close_error
 
         def remote_connect(url, region):
             remote_calls.append((url, region))
+            if on_connect:
+                on_connect(url)
             if remote_error:
                 raise remote_error
             return permission_matrix.RuntimeConnection((CloseFails if close_error else Client)(runtime_server(doris)))
@@ -533,7 +549,7 @@ class RemoteRuntime(unittest.TestCase):
 
         out, err = io.StringIO(), io.StringIO()
         env = {"APPLY": "1"} if apply else {}  # no DORIS_* at all: the Runtime has its own settings
-        rc = permission_matrix.main(["--url", RUNTIME_URL, *argv], env=env, connect=no_direct_connect, out=out,
+        rc = permission_matrix.main(["--url", url, *argv], env=env, connect=no_direct_connect, out=out,
                                     err=err, remote_connect=remote_connect)
         return rc, out.getvalue(), err.getvalue(), doris, remote_calls
 
@@ -596,6 +612,21 @@ class RemoteRuntime(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertEqual(err.strip(), "FAILED: connect: ConnectionError: POST *** failed")
 
+    def test_a_url_with_an_ipv4_host_is_masked_whole(self):
+        url = "http://198.51.100.7:8000/mcp"  # the IPv4 pattern must not get to it before the URL does
+        rc, _, err, _, _ = self.run_remote(url=url, remote_error=ConnectionError(f"POST {url} failed"))
+        self.assertEqual(rc, 1)
+        self.assertEqual(err.strip(), "FAILED: connect: ConnectionError: POST *** failed")
+
+    def test_sdk_log_lines_are_masked(self):
+        def sdk_logs(url):
+            logging.getLogger("mcp.client.streamable_http").error("Error in post_writer: POST %s via 198.51.100.7",
+                                                                  url)
+
+        rc, out, err, _, _ = self.run_remote(on_connect=sdk_logs)
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(err.strip(), "ERROR mcp.client.streamable_http: Error in post_writer: POST *** via <ip>")
+
     def test_a_failed_close_is_one_masked_warning_and_keeps_the_result(self):
         # A passing run stays 0; the old identity with --expect-host stays 1.
         for doris, argv, rc_want, summary in ((None, [], 0, "4/4 checks pass"),
@@ -608,10 +639,7 @@ class RemoteRuntime(unittest.TestCase):
                 self.assertEqual(err.strip(), "WARN: close: ConnectionError: DELETE *** failed")
 
     def test_default_remote_connect_uses_the_sigv4_client(self):
-        scripts = str(ROOT / "scripts")
-        sys.path.insert(0, scripts)
-        self.addCleanup(sys.path.remove, scripts)
-        import agentcore_client
+        import agentcore_client  # permission_matrix puts scripts/ on sys.path
         server = runtime_server(FakeDoris())
         with mock.patch.object(agentcore_client, "sigv4_client", return_value=Client(server)) as factory:
             conn = permission_matrix._runtime_connection(RUNTIME_URL, "us-east-1")

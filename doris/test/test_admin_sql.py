@@ -189,6 +189,13 @@ class DropUser(unittest.TestCase):
         self.assertIn("must follow a CREATE USER of another mcp_svc identity", output)
         self.assertEqual(conn.executed, [])
 
+    def test_a_misplaced_drop_is_refused_before_the_secret_is_read(self):
+        sql = "DROP USER IF EXISTS 'mcp_svc'@'%';\n" + MIGRATE_SQL.replace("DROP USER IF EXISTS 'mcp_svc'@'%';\n", "")
+        rc, output, conn = run(sql=sql, secret="not json", apply=True)
+        self.assertEqual(rc, 2)
+        self.assertIn("must follow a CREATE USER of another mcp_svc identity", output)
+        self.assertEqual(conn.executed, [])
+
     def test_dropping_an_identity_the_script_also_sets_up_is_refused(self):
         for extra in ("GRANT SELECT_PRIV ON internal.ecom.* TO 'mcp_svc'@'%';",
                       "ALTER USER 'mcp_svc'@'%' IDENTIFIED BY '${MCP_SVC_PASSWORD}';",

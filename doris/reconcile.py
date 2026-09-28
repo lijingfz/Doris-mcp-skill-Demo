@@ -31,6 +31,7 @@ from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence, TextIO
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "mcp-server" / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))  # redact, agentcore_client
 MODELS_DIR = ROOT / "doris" / "semantic" / "ecom"
 
 import pymysql  # noqa: E402
@@ -41,7 +42,7 @@ from store.bootstrap import bootstrap_from_yaml  # noqa: E402
 from store.compiler import MetricFlowCompiler  # noqa: E402
 from store.manifest import SemanticManifest  # noqa: E402
 
-MASK = "***"
+import redact  # noqa: E402
 MAX_PROBLEMS = 10
 # Ratios and averages are computed in DOUBLE (or scale-6 DECIMAL); everything else is an exact sum/count.
 APPROX_METRICS = frozenset(
@@ -206,16 +207,9 @@ def compare(case: Case, got: Sequence[Mapping[str, Any]], want: Sequence[Mapping
     return problems
 
 
-def _mask(text: str, secrets: Iterable[str]) -> str:
-    for s in secrets:
-        if s:
-            text = text.replace(s, MASK)
-    return text
-
-
 def _failed(error: Exception, secrets: Iterable[str], err: TextIO) -> int:
     """One masked line instead of a traceback: the message may name the host or carry a password."""
-    print(f"FAILED: {type(error).__name__}: {_mask(str(error), secrets)}", file=err)
+    print(f"FAILED: {type(error).__name__}: {redact.redact(str(error), secrets)}", file=err)
     return 1
 
 
@@ -277,10 +271,10 @@ class McpBackend:
         try:
             body = json.loads(text)
         except ValueError:
-            raise ReconcileError(f"{tool}: non-JSON result: {_mask(text, self.secrets)[:300]}") from None
+            raise ReconcileError(f"{tool}: non-JSON result: {redact.redact(text, self.secrets)[:300]}") from None
         if not isinstance(body, dict) or body.get("success") is not True:
             error = body.get("error", body) if isinstance(body, dict) else body
-            raise ReconcileError(f"{tool}: {_mask(json.dumps(error, ensure_ascii=False), self.secrets)[:500]}")
+            raise ReconcileError(f"{tool}: {redact.redact(json.dumps(error, ensure_ascii=False), self.secrets)[:500]}")
         return body
 
     async def metric_names(self) -> set[str]:
@@ -317,7 +311,7 @@ async def reconcile(cases: Sequence[Case], query: Callable[[Case], Awaitable[lis
             failed += 1
             print(f"FAIL  {case.name}: {len(problems)} problem(s)", file=out)
             for problem in problems[:MAX_PROBLEMS]:
-                print(f"      {_mask(problem, secrets)}", file=out)
+                print(f"      {redact.redact(problem, secrets)}", file=out)
         else:
             print(f"ok    {case.name} ({len(want)} rows)", file=out)
     print(f"{len(cases) - failed}/{len(cases)} cases match", file=out)
@@ -334,9 +328,6 @@ def _in_process_client(settings: Settings) -> Any:
 
 def _remote_client(url: str, region: str | None) -> Any:
     """fastmcp Client for a Runtime invoke URL (inbound auth AWS_IAM), see scripts/agentcore_client.py."""
-    scripts = str(ROOT / "scripts")
-    if scripts not in sys.path:
-        sys.path.insert(0, scripts)
     import agentcore_client
 
     return agentcore_client.sigv4_client(url, region)
@@ -394,12 +385,15 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
     except Exception as e:  # noqa: BLE001 - e.g. boto3 client setup for DORIS_SECRET_ID
         return _failed(e, [env.get("DORIS_PASSWORD", ""), env.get("DORIS_HOST", "")], err)
     secrets = [settings.doris_password, settings.doris_host]  # pymysql errors name the host
+    if args.url:
+        secrets.append(args.url)
+        redact.redact_sdk_logs(secrets, stream=err)  # the MCP SDK logs transport errors itself, URL included
     try:
         conn = connect(host=settings.doris_host, port=settings.doris_port, user=settings.doris_user,
                        password=settings.doris_password, connect_timeout=10, read_timeout=120,
                        autocommit=True, cursorclass=pymysql.cursors.DictCursor)
     except pymysql.MySQLError as e:
-        print(f"FAILED: connect: {_mask(str(e), secrets)}", file=err)
+        print(f"FAILED: connect: {redact.redact(str(e), secrets)}", file=err)
         return 1
 
     logging.disable(logging.WARNING)  # MetricFlow and the server are chatty below ERROR
@@ -419,7 +413,7 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
                 client = (client_factory or _in_process_client)(dataclasses.replace(settings, workspace_dir=tmp))
                 failed = asyncio.run(_run_mcp(client, args.models, args.workspace, cases, reference, out, secrets))
     except ReconcileError as e:
-        print(f"FAILED: {_mask(str(e), secrets)}", file=err)
+        print(f"FAILED: {redact.redact(str(e), secrets)}", file=err)
         return 1
     except Exception as e:  # noqa: BLE001 - e.g. client_factory / build_server, a transport error
         return _failed(e, secrets, err)

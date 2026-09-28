@@ -4,6 +4,8 @@ import asyncio
 import contextlib
 import io
 import json
+import logging
+import os
 import re
 import sys
 import tempfile
@@ -67,6 +69,9 @@ def fake_server(state: SimpleNamespace) -> FastMCP:
 class _SmokeCase(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.state = SimpleNamespace(active=0, peak=0, sql=[], processlist=list(PROCESSLIST), clients=0)
+        sdk_logger = logging.getLogger("mcp")  # main() installs a redacting handler on it
+        self.enterContext(mock.patch.object(sdk_logger, "handlers", []))
+        self.enterContext(mock.patch.object(sdk_logger, "propagate", True))
         self.server = fake_server(self.state)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -231,6 +236,46 @@ class TestConns(_SmokeCase):
         self.assertEqual(rc, 1)
         self.assertIn("FAIL: SHOW PROCESSLIST: CONNECTION_ERROR", out)
         self.assertNotIn("10.1.2.3", out)
+
+
+class TestErrorsAreMasked(_SmokeCase):
+    async def test_a_connection_error_is_one_masked_line(self):
+        def refused(_args):
+            raise ConnectionError("POST http://fake/mcp failed (198.51.100.7)")
+
+        self.factory = refused
+        rc, out = await self.run_main("list")
+        self.assertEqual(rc, 1)
+        self.assertIn("FAIL: ConnectionError: POST *** failed (<ip>)\n", out)
+        self.assertNotIn("fake/mcp", out)
+        self.assertRegex(out, r"(?m)^total \d+ ms$")
+
+    async def test_the_bearer_token_is_masked(self):
+        token = "tok-0123456789abcdef"
+
+        def rejected(_args):
+            raise RuntimeError(f"401 for Bearer {token}")
+
+        self.factory = rejected
+        with mock.patch.dict(os.environ, {"GW_TOKEN": token}):
+            rc, out = await self.run_main("--bearer-env", "GW_TOKEN", "list")
+        self.assertEqual(rc, 1)
+        self.assertIn("FAIL: RuntimeError: 401 for Bearer ***\n", out)
+
+    async def test_sdk_log_lines_are_masked(self):
+        real = self.factory
+
+        def logs_the_url(args):
+            logging.getLogger("mcp.client.streamable_http").warning("Session termination failed: POST %s", args.url)
+            return real(args)
+
+        self.factory = logs_the_url
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc, _ = await self.run_main("list")
+        self.assertEqual(rc, 0)
+        self.assertIn("Session termination failed: POST ***", err.getvalue())
+        self.assertNotIn("fake/mcp", err.getvalue())
 
 
 class TestSigV4Option(unittest.TestCase):

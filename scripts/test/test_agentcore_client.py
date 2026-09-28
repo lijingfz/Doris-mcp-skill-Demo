@@ -129,6 +129,12 @@ class TestSigV4Client(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "--region"):
             agentcore_client.sigv4_client("http://127.0.0.1:8000/mcp")
 
+    def test_the_region_error_does_not_echo_the_url(self):
+        with self.assertRaises(ValueError) as cm:
+            agentcore_client.sigv4_client("http://198.51.100.7:8000/mcp")
+        self.assertIn("--region", str(cm.exception))
+        self.assertNotIn("198.51.100.7", str(cm.exception))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
