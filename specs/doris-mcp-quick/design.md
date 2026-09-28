@@ -1,6 +1,6 @@
 # Doris MCP on AgentCore × Amazon Quick 桌面版 —— 设计
 
-> 版本：**v0.5** · 2026-09-27 · 状态：P3 已按 `plans/P3-deploy.md` 实施完成（T3.0–T3.5），整体评审（opus）已完成（0 Critical / 0 Important），已本地合并到 `main`；P2 已按 `plans/P2-doris.md` 实施完成（T2.1–T2.7），整体评审（opus）已完成、I1 已修复并重新发布，已本地合并到 `main`；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
+> 版本：**v0.6** · 2026-09-27 · 状态：P4 进行中（`plans/P4-quick.md`，分支 `p4-quick`）；P3 已按 `plans/P3-deploy.md` 实施完成（T3.0–T3.5），整体评审（opus）已完成（0 Critical / 0 Important），已本地合并到 `main`；P2 已按 `plans/P2-doris.md` 实施完成（T2.1–T2.7），整体评审（opus）已完成、I1 已修复并重新发布，已本地合并到 `main`；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
 > 输入材料：`prepare/` 下 4 份文件 + upstream `velodb-mcp-server`（锁定 commit `f235832`）+ 旧仓库 `velodb-mcp-agentcore`（复用流程与脚本）
 > 标注约定：✅ 已实测（本次对真实 Doris / AWS 账号只读验证）· 📄 官方文档确认 · ❓ 待 P0 验证
 
@@ -9,11 +9,12 @@
 | 版本 | 变更 |
 |---|---|
 | v0.1 | 初版（`docs/改造方案.md`），用户 review |
+| v0.6 | P4 计划（`plans/P4-quick.md`）：代码在 spec 阶段完成 TDD 草稿，并在 `96d18ce` 的干净 worktree 上回放；另外只读核实了 CloudTrail 和 Gateway 指标。① **更正 scope 结论（P0 评审 M-1）**：P0 写的「Quick 按 PRM 请求到了 `doris-mcp/invoke`」证据不足，改为**未证实**，T4.1 用浏览器 authorize URL 确认（§4.5、§13）。CloudTrail `Token_POST` 显示：Service auth 的 token 请求带 `scope=doris-mcp/invoke`，可能来自界面里填的 scope；User auth 的 token 请求不带 scope、带 `resource`；authorize 请求不进 CloudTrail；请求不带 scope 时 Cognito 授予 client 的全部 scope。② **Quick 侧耗时（P0 评审 M-3）**：Quick 从自己的后端调用 Cloud Connector，所以 Gateway 的 InvokeGateway Latency 就是 Quick 每次工具调用等待的时间。新增 `scripts/gw_latency.py`（T4.6）；T4.4 用秒表记总耗时，用它记每次工具调用（§4.4、§13）。③ **URL / IPv4 mask 收口（T4.5）**：`scripts/redact.py` 统一处理，并接管 MCP SDK 自己的日志行（T3.0、T3.3 与 T3.6 M1 / M2 的遗留）。④ §13 写入 T3.3 / T3.4 实测值；§7 的清理一行补上两个 IAM 角色；§8.1 写明 P4 的工具权限；§8.3 两个 agent 各只关联自己的连接器，P4 不挂 skills |
 | v0.5 | P3 计划（`plans/P3-deploy.md`）在 spec 阶段完成 TDD 草稿和只读预验证：① 补丁 **P-09**：Gateway 的每次调用都是新 microVM，销毁时池连接不会被关闭，Doris 默认 `wait_timeout` 28800 s，而 `mcp_svc` 的 `max_user_connections` 是 100；每个池连接执行 `SET wait_timeout = 600`（§5.2、§13）。② Runtime 执行角色改为自建的 `doris-mcp-runtime-role`（`infra/35-runtime-role.sh`，经 `agentcore.json` 的 `executionRoleArn` 导入），只能写自己的日志组、只能读 `doris-mcp/mcp_svc`；`deploy --diff` 确认删除 CDK 角色和 DefaultPolicy、Runtime 原地更新（§7、§14）。③ CodeZip 的传递依赖漂移（`caio`、`platformdirs`），T3.2 锁定并对比 88 个 dist（§5.2、§13）。④ `mcp_svc` 迁到 `'172.31.%'`：先 CREATE 新身份并授权，最后 `DROP USER IF EXISTS 'mcp_svc'@'%'`；之后开发机以 `mcp_svc` 登录会得到 1045（§6.1）。⑤ §13 增加连接泄漏、共享 session 下的并发、语义层加载耗时、日志和返回里的 IP、2003 错误带 host 等风险；§14 Gateway DEBUG 的结论为保留到 T5.5，T3.4 做泄漏检查，另加 FE 审计日志一项 |
 | v0.4.1 | P2 整体评审（opus）I1：upstream query_metric 把指标列的 NULL 改写成 0，2025 年期间的同比会被报成 0；gmv_last_year / gmv_yoy 的 description 加上「无数据而不是持平」的说明，并记进 §6.3 的坑；需要重新发布 ecom（GATE）|
 | v0.4 | P2 代码在 spec 阶段完成 TDD 草稿（117 个 Python 测试 + 4 组 shell 测试），并用 `demo_ro` 对真实 Doris 只读跑通 11 个故事线对账用例（到分一致）：① 语义层发布改为**方案 C**：root 在本机进程内调用 upstream `DorisStore`，不起 Web UI（upstream 写接口要求 Doris 角色 `admin`），不调用 upstream `commit_staging`（它会 `GRANT … TO '%'`）（§4.2、§6.3）。② 首次发布由 root 创建 `system_mcp` 库、3 张表和 `ecom` 元数据行，`mcp_svc` 因此不需要 LOAD_PRIV；执行顺序改为 T2.1 → T2.4 → T2.5 → T2.2 → T2.3 → T2.6。③ `01_mcp_user.sql` 改为 `CREATE USER IF NOT EXISTS` + `ALTER USER`，密码占位符在内存里填入（§6.1）。④ §6.3 模型表按实际的 10 个文件、22 个指标重写，并记录编译器的坑。⑤ `reload_semantic_layer` 不需要调用：`ensure_fresh` 在 semantic_version 变化时自动重载。⑥ R-42 验收接受 Doris 给每个用户默认列出的 `information_schema` / `mysql` SELECT 和 workload group `normal` 的 USAGE（requirements v1.3）|
 | v0.3.1 | 用户决定 D9：User auth、Service auth 在 P0 都已跑通，**不做 Local stdio**（R-11 取消），备份路径改为 Cloud Connector + Service auth。§1、§2、§3、§4.4、§8.2、§8.3、§11、§13 同步；v0.3 行里「Local stdio 顺延到 T4.2」作废 |
-| v0.3 | P0 实测结论（`progress.md` T0.2–T0.7 日志）：① OAuth 回调 URL 就是默认值 `https://us-east-1.quicksight.aws.amazon.com/sn/oauthcallback` ✅；Quick 桌面版 User auth、Service auth 都已跑通，Local stdio 顺延到 T4.2（§4.4）。② Gateway 的 401 / PRM 实际内容；Quick 按 PRM 请求到了 `doris-mcp/invoke`；工具列表只有 target 工具（§4.5）。③ **经 Gateway 时每次 `tools/call` 都新开一个 Runtime 会话（冷启动约 4.5–5.5 s），预热无效**；直连时复用 `Mcp-Session-Id` 的热调用约 0.3 s（§4.5、§13）。④ agentcore CLI 0.30.0 的实际行为，包括 deploy 会顺带修改账号级 X-Ray Transaction Search 设置（§7、§13）。⑤ 待 P3 复查：CDK 默认执行角色带通配权限、Gateway `--exception-level DEBUG`（§14）|
+| v0.3 | P0 实测结论（`progress.md` T0.2–T0.7 日志）：① OAuth 回调 URL 就是默认值 `https://us-east-1.quicksight.aws.amazon.com/sn/oauthcallback` ✅；Quick 桌面版 User auth、Service auth 都已跑通，Local stdio 顺延到 T4.2（§4.4）。② Gateway 的 401 / PRM 实际内容；Quick 按 PRM 请求到了 `doris-mcp/invoke`（v0.6 更正：证据不足，改为未证实，T4.1 确认）；工具列表只有 target 工具（§4.5）。③ **经 Gateway 时每次 `tools/call` 都新开一个 Runtime 会话（冷启动约 4.5–5.5 s），预热无效**；直连时复用 `Mcp-Session-Id` 的热调用约 0.3 s（§4.5、§13）。④ agentcore CLI 0.30.0 的实际行为，包括 deploy 会顺带修改账号级 X-Ray Transaction Search 设置（§7、§13）。⑤ 待 P3 复查：CDK 默认执行角色带通配权限、Gateway `--exception-level DEBUG`（§14）|
 | v0.2.2 | P1 代码在 spec 阶段完成 TDD 草稿，并用 `demo_ro` 连真实 Doris 跑通 E2E（结论写进 `plans/P1-mcp-server.md`）：① `/api/profile/text` 找不到 id 时返回**纯文本** `query id <id> not found`，因此「非 JSON 就是命中」的判断改为「第一行必须是段落标题」（§4.1、§5.3）。② summary 额外删除全 0 计数器，并折叠 PhysicalPlan 的逐列统计：真实 profile 103 487 → **9 109** 字符（旧规则 20 487）（§4.1、§5.3、R-23）。③ Doris 会保留 `/* trace:… */` 注释，§5.3 的 ❓ 关闭。④ 入口**不挂** `RequestLoggerMiddleware`（它会把请求 header 和 body 里的 SQL 写进 CloudWatch）（§4.6、§5.2、§13）。⑤ P-07：vendoring 时要带上 upstream 根目录的 `requirements.txt`（upstream `test_deps.py` 需要它）；AgentCore CLI 0.30 先试 `aarch64-manylinux2014`，`rapidfuzz` 没有该平台 wheel，CLI 会自动回退到 `manylinux_2_28`，安装后约 107 MB |
 | v0.2.1 | spec 阶段追加核实：Gateway 从一开始就设 `allowedScopes=[doris-mcp/invoke]`（会写进 PRM 和 WWW-Authenticate，解决 Quick scope 风险）；`supportedVersions` 用默认值；`Mcp-Session-Id` 放行改为 P0 之后的可选实验；CDK 已在 us-east-1 bootstrap；VPC 内只有 Doris 一台 EC2；AWS CLI `file://` 不能读 `/dev/fd`、stdin，secret 输入改用 0600 临时文件；Quick 用的 client secret 由用户在**自己的终端**获取（不用 `!` 前缀，否则会进入对话记录）|
 | v0.2 | ① 决策 D1–D8 已定，D2 = Enterprise。② 读完 upstream 源码后精简补丁：删除原 P-07（关闭 Web UI）和 P-08（SEED_EXAMPLE），因为 Runtime 只转发 `/mcp`，示例数据只能从 Web UI 路由触发；原 P-06 改为「store 服务账号兜底 + `create_server(service_credentials=…)`」；profile 工具改从入口注册，不改动 upstream 的 `server.py` 工具区。③ upstream 锁定 commit `f235832`（tag `velodb-mcp-server-0.3.0`，pyproject 版本号仍是 0.2.6）。④ Gateway 用 AWS CLI 创建（已确认 CLI 支持 IAM 出站 + metadata 头），不依赖 agentcore CLI。⑤ Gateway 暴露的工具名带 target 前缀 `doris___`。⑥ 基础设施脚本重新编号，默认 dry-run。⑦ 移到 `specs/doris-mcp-quick/design.md` |
@@ -154,18 +155,24 @@
   - **Cloud Connector + User auth**：成功（client A，`demo` 用户登录）。
   - **Cloud Connector + Service auth**：成功（client B）。
   - **Local stdio**：P0 未在 Quick 中尝试；之后用户决定整个项目不做（D9），备份路径改为 Service auth。`mcp-proxy-for-aws` → Runtime 的 SigV4 链路已在 T0.4 从开发机验证通过，仅用于开发机冒烟。
-  - Quick 发起的每次调用在 Runtime 日志里都是一个新会话（新 microVM）：`initialize` 200 → `notifications/initialized` 202 → `tools/call` 200。端到端耗时没有在 Quick 侧测量。
+  - Quick 发起的每次调用在 Runtime 日志里都是一个新会话（新 microVM）：`initialize` 200 → `notifications/initialized` 202 → `tools/call` 200。端到端耗时没有在 Quick 侧测量（P0 评审 M-3），由 P4 补上：T4.4 用秒表记每个问题的总耗时，T4.6 的 `scripts/gw_latency.py` 从 Gateway 指标取每次工具调用的耗时。Quick 从自己的后端调用 Cloud Connector（CloudTrail 里的 UA 是 `Google-HTTP-Java-Client`），所以 Gateway 的 InvokeGateway Latency 就是 Quick 每次工具调用等待的时间。
 
 ### 4.5 AgentCore Gateway 📄 / ✅
 - MCP server target 的出站鉴权支持：无 / OAuth（2LO、3LO、token exchange）/ **IAM SigV4**（`GATEWAY_IAM_ROLE` + `iamCredentialProvider{service: bedrock-agentcore, region}`）/ API key。
 - 支持的 MCP 协议版本：2026-07-28、2025-11-25、2025-06-18、2025-03-26。
 - ✅ AWS CLI 2.36.36 的 `bedrock-agentcore-control` 支持 `create-gateway`（`--protocol-configuration mcp{supportedVersions,searchType,sessionConfiguration}`、`customJWTAuthorizer{discoveryUrl,allowedClients,allowedScopes}`）、`create-gateway-target`（`mcpServer.endpoint`、`--credential-provider-configurations`、`--metadata-configuration allowedRequestHeaders/…`）、`synchronize-gateway-targets`。**因此 Gateway 用 AWS CLI 脚本创建**（`infra/30-gateway.sh`）。
-- ✅ `customJWTAuthorizer.allowedScopes` 会出现在 Gateway 的 OAuth Protected Resource Metadata（RFC 9728）和 401 的 `WWW-Authenticate` 头里 → Quick 按 PRM 发现时会请求正确的 scope。脚本默认设 `allowedScopes=[doris-mcp/invoke]`；需要回退时用 `GW_ALLOWED_SCOPES= APPLY=1 bash infra/30-gateway.sh` 去掉。
+- ✅ `customJWTAuthorizer.allowedScopes` 会出现在 Gateway 的 OAuth Protected Resource Metadata（RFC 9728）和 401 的 `WWW-Authenticate` 头里 → 客户端按 PRM 发现时可以据此请求 scope（Quick 有没有这样做**未证实**，见下面 P0 实测的 scope 一条）。脚本默认设 `allowedScopes=[doris-mcp/invoke]`；需要回退时用 `GW_ALLOWED_SCOPES= APPLY=1 bash infra/30-gateway.sh` 去掉。
 - `supportedVersions` 不设（用服务默认值，与账号里已有的 `pragent-github-gw` 一致）；不用 `searchType=SEMANTIC`（会多出一个搜索工具）。P0 用 `--exception-level DEBUG` 便于排错，**待 P3 复查**是否去掉（§14）。
 - ✅ P0 实测（T0.6 / T0.7，Gateway `doris-mcp-gw`）：
   - 不带 token：`HTTP/2 401`，`www-authenticate: Bearer error="invalid_token", scope="doris-mcp/invoke", resource_metadata="https://<gw>.gateway.bedrock-agentcore.us-east-1.amazonaws.com/.well-known/oauth-protected-resource"`。PRM 在 Gateway 的**根路径**，不是 `…/oauth-protected-resource/mcp`。
   - PRM：`{"authorization_servers": ["https://cognito-idp.us-east-1.amazonaws.com/<pool-id>"], "resource": "https://<gw>…/mcp", "scopes_supported": ["doris-mcp/invoke"]}`。
-  - scope：Gateway 设了 `allowedScopes`，Quick User auth 仍然成功，说明 Quick 按 PRM / `WWW-Authenticate` 请求到了 `doris-mcp/invoke`，不需要用 `GW_ALLOWED_SCOPES=` 回退。无效 token → 401。
+  - scope：Gateway 设了 `allowedScopes`，Quick 的 User auth、Service auth 仍然都成功，不需要用 `GW_ALLOWED_SCOPES=` 回退。无效 token → 401。
+    - **这不能证明 Quick 按 PRM 请求了 scope**（P0 评审 M-1，v0.6 更正）：请求不带 scope 时，Cognito 授予 client 允许的全部 scope（A 是 `openid doris-mcp/invoke`，B 是 `doris-mcp/invoke`），token 里照样有 `doris-mcp/invoke`。
+    - CloudTrail `Token_POST`（2026-09-26，只看 client A / B、UA 为 `Google-HTTP-Java-Client` 的事件）：
+      - Service auth：token 请求带 `scope=doris-mcp/invoke`。T0.7 指南让用户在界面里填了这个 scope，所以它不一定来自 PRM。
+      - User auth：token 请求（authorization_code）不带 scope，这是正常的，scope 在 authorize 请求里；它带 `resource`（RFC 8707）。
+      - authorize 请求不进 CloudTrail。
+    - 结论：**未证实**。T4.1 在 Sync 触发重新授权时，从浏览器里 authorize / login 页面的 URL 读出 `scope`。只记录三项：scope 的值、有没有 `resource`、`code_challenge_method`，不粘贴 URL。结果是什么都不影响功能。
   - 工具列表**只有 target 工具**（`doris___net_check`），没有 Gateway 内置工具，T3.4 / T4.1 的 12 个工具的期望不变。
   - `tools/list` 由 Gateway 用已同步的目录回答，不调用 Runtime（约 1.6 s，含 initialize）。`create-gateway-target` 时 Gateway 会调用 Runtime 同步工具（P0 观察到 2 个会话）。
   - **会话**：Gateway 不向客户端返回 `Mcp-Session-Id`；**每次 `tools/call` 都会新开一个 Runtime 会话**（新 microVM，冷启动），同一个客户端会话里连续 3 次调用也是 3 个新会话，每次约 4.5–5.5 s（spike，开发机在 ap-northeast-2）。
@@ -360,7 +367,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 | `infra/20-cognito.sh` | P0 | user pool `doris-mcp-quick`（只允许管理员建用户）、域名前缀 `doris-mcp-890717383483`、resource server `doris-mcp`（scope `invoke`）；client A `quick-user`（授权码 + PKCE，带 secret，callback 见 §4.4，scope `openid doris-mcp/invoke`）；client B `quick-service`（client_credentials，scope `doris-mcp/invoke`）；演示用户 `demo`（密码存入 Secrets Manager `doris-mcp/cognito-demo-user`）|
 | `infra/30-gateway.sh` | P0 | IAM 角色 `doris-mcp-gateway-role`（信任 `bedrock-agentcore.amazonaws.com`，限定 SourceAccount；只允许对该 runtime 调用 `InvokeAgentRuntime`）；Gateway `doris-mcp-gw`（MCP，CUSTOM_JWT，allowedClients = A、B，allowedScopes = `doris-mcp/invoke`）；target `doris`（mcpServer endpoint = Runtime invoke URL，GATEWAY_IAM_ROLE）|
 | `infra/40-doris-secret.sh` | P2 | Secret `doris-mcp/mcp_svc`（`{"username":"mcp_svc","password":<get-random-password>}`）|
-| `infra/99-cleanup.sh` | 结束 | 按标签删除 endpoint、Gateway、Cognito、secret、SG 规则；runtime 用 `agentcore` 命令删除 |
+| `infra/99-cleanup.sh` | 结束 | 按标签删除 endpoint、Gateway、Cognito、secret、SG 规则；runtime 用 `agentcore` 命令删除（CDK 栈 `AgentCore-dorismcp-default`）。IAM 角色 `doris-mcp-gateway-role`、`doris-mcp-runtime-role` 不在栈里，删栈之后单独删除：先删内联策略，再删角色（两个角色都有 `Project` 标签）|
 
 **Runtime invoke URL**：`https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/<URL 编码后的 Runtime ARN>/invocations?qualifier=DEFAULT`
 
@@ -395,7 +402,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
    - **User authentication（主）**：Client ID/Secret 填 client A；Token URL 为 `https://doris-mcp-890717383483.auth.us-east-1.amazoncognito.com/oauth2/token`，Authorize URL 把末尾换成 `/oauth2/authorize`。演示者用 Cognito 用户 `demo` 登录一次即可。
    - **Service authentication（备）**：填 client B，不需要用户登录。
    - client secret 由用户**在自己的终端里**获取（不要用 Claude Code 的 `!` 前缀，否则 secret 会进入对话记录）：`aws cognito-idp describe-user-pool-client --region us-east-1 --user-pool-id <COGNITO_POOL_ID> --client-id <CLIENT_A_ID> --query UserPoolClient.ClientSecret --output text --no-cli-pager`。演示用户密码同理：`aws secretsmanager get-secret-value --region us-east-1 --secret-id doris-mcp/cognito-demo-user --query SecretString --output text --no-cli-pager`。（T0.7 经验：命令要写成单行，并显式带上 `--region`、`--output text`、`--no-cli-pager`，否则用户的 CLI 配置可能导致没有任何输出；凭证必须属于账号 `890717383483`。）
-4. 创建后**逐个启用工具**（新工具默认禁用）；只读工具设为 Always Allow，`execute_query` 在演示时也设为 Always Allow（D7）。
+4. 创建后**逐个启用工具**（新工具默认禁用）；只读工具设为 Always Allow，`execute_query` 在演示时也设为 Always Allow（D7）。P4 不是彩排，所以 `execute_query` 用 Ask Each Time（D7 的「平时」）；`reload_semantic_layer` 没有 readOnly 注解，始终用 Ask Each Time。
 5. 工具有变更时：`aws bedrock-agentcore-control synchronize-gateway-targets` → 在 Quick 连接器详情页点 **Sync**（会重新授权）→ 启用新工具。
 
 ### 8.2 备份路径 ②：桌面版 Local stdio → Runtime（SigV4）—— 已取消（D9）
@@ -419,8 +426,16 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 - **不推荐**：Remote + 静态 Bearer（Cognito access token 最长 1 天就会过期）。
 
 ### 8.3 「Doris 专家」Agent
-- 在桌面版创建自定义 Agent，关联 ① 的连接器（User auth；备份时换成 Service auth 连接器）以及 §9 的 skills。
-- 指令只写三件事：角色（基于真实 ecom 集群的 Doris 专家）、硬约束（证据优先、只读、DDL 只给出不执行）、演示口径（中秋节 2026-09-25 12:00 的业务设定）。
+- 在桌面版创建两个自定义 Agent，指令相同（`quick/agent-instructions.md`），各自只关联一个连接器：
+  - 「Doris 专家」关联 `doris-mcp`（User auth，主路径）；
+  - 「Doris 专家（svc）」关联 `doris-mcp-svc`（Service auth，备份路径）。
+  - 两个连接器暴露的工具名都是 `doris___*`，一个 agent 同时关联两个连接器会出现重名工具。
+  - P4 不挂 skills；§9 的 skills 在 P5（T5.3）加上。
+- 指令只写三件事：
+  - 角色：基于真实 ecom 集群的 Doris 专家；
+  - 硬约束：证据优先、只读、DDL 只给出不执行；外加 60 s 超时和不复述连接信息；
+  - 演示口径：中秋节 2026-09-25 12:00 的业务设定，以及同比、占比指标的用法。
+- 指令文件由 `quick/test/test_agent_instructions.py` 检查：长度、三段结构、关键规则；工具名都带 `doris___` 前缀并且真实存在；指令里的指标名是语义层发布的指标，维度名能在 `query_metric` 里编译，指标个数与语义层一致；没有 URL、IP、ARN、账号。
 - skill 选择交给 Quick 按 description 自动匹配。
 
 ---
@@ -476,7 +491,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 | **P1 本地改造** | §5 全部补丁；本机用 `demo_ro` 连 Doris 公网 IP 联调 | 12 个工具都能调；Draft 7 校验通过；upstream 离线测试全部通过；profile：用 hint 执行 → 能列出 → 能取到 summary（< 20k 字符）；非法 qid、找不到、密码错误三种情况都返回结构化结果 |
 | **P2 Doris 与语义层** | §6：secret、账号、授权、ecom 语义模型发布（方案 C）| `mcp_svc` 权限矩阵 14/14（`SHOW GRANTS` 恰好是 R-42 + Doris 默认项、store 初始化成功、9 个写探针全部被拒）；经 MCP server 的 `query_metric` 与故事线 SQL 11/11 到分一致，已发布的 22 个指标与本地模型一致 |
 | **P3 AgentCore 部署** | P2 评审遗留 M1–M4 + 补丁 P-09；Runtime 切换为 `mcp-server/`，接入 secret，执行角色换成专用角色；同步 Gateway target；`mcp_svc` host 收紧（`plans/P3-deploy.md`）| SigV4 直连冒烟通过（12 个工具、flow 6/6）；Gateway token 冒烟通过（`doris___*` 12 个、flow 6/6）；CloudWatch 能看到每次调用的审计日志；冷启动 + 典型查询 < 60 s（串行和 20 个并发，探针可重跑）；残留连接空闲 600 s 后被 Doris 回收；Gateway DEBUG 返回里没有 IP / 密码 / 栈；`mcp_svc` host 收紧为 `'172.31.%'`，经 Runtime 复核 5/5、对账 11/11；R-40 复核 |
-| **P4 Quick 桌面版** | §8：① 主路径（User auth）+ 备份路径（Service auth，D9）+ Agent | 两条路径都能完成 §10 的「开场 + 第 2 幕」；工具权限按 D7 设置 |
+| **P4 Quick 桌面版** | §8：① 主路径（User auth）+ 备份路径（Service auth，D9）+ Agent；T4.5 URL / IPv4 mask 收口；T4.6 Gateway 侧耗时探针（`plans/P4-quick.md`）| 两条路径都能完成 §10 的「开场 + 第 2 幕」，数字与参照值一致；工具权限按 D7 设置；每个问题的总耗时和每次工具调用的耗时都有记录（M-3），没有 424；scope 行为有结论（M-1）|
 | **P5 Skills 与彩排** | §9 导入与 adapter；§10 完整彩排 2 次 | Track A、Track B 端到端无人工干预（执行 DDL 除外）；记录每步耗时（经 Gateway 时每次工具调用都含冷启动，预热无效，见 §13）|
 
 ---
@@ -491,21 +506,21 @@ D1–D8 已于 2026-09-26 确定，完整结论见 `requirements.md` 文末。�
 
 | 风险 | 影响 | 应对 |
 |---|---|---|
-| Quick 60 s 硬超时 | VPC 冷启动 + 重查询会报 424 | query_timeout 设为 50 s，profile HTTP 超时 15 s；大查询先 EXPLAIN 并加 LIMIT。**P0 实测（spike `net_check`，开发机在 ap-northeast-2）✅**：<br>• 直连（SigV4）：新会话 `initialize` 约 4.4 s（冷），复用 `Mcp-Session-Id` 后 `tools/call` 约 0.3 s（热）；经 `mcp-proxy-for-aws` 时每个进程都开新会话，一次调用约 8 s。<br>• 经 Gateway：**每次** `tools/call` 约 4.5–5.5 s（每次都是新 Runtime 会话）。<br>• Runtime 日志显示，server 从进程启动到返回 tools/call 不到 1 s，冷启动的时间主要花在 microVM 分配上。<br>冷启动 + 首次调用远小于 40 s，**不需要预热方案**。而且经 Gateway 时每次调用都是新会话，预热本来也没有效果（取消原来的「演示前预热」和「调大 idle timeout」）。P3（T3.3）要用完整的 P1 server（import 更重）重新测冷启动；每次调用的冷启动开销要从 60 s 预算里扣掉 |
+| Quick 60 s 硬超时 | VPC 冷启动 + 重查询会报 424 | query_timeout 设为 50 s，profile HTTP 超时 15 s；大查询先 EXPLAIN 并加 LIMIT。**P0 实测（spike `net_check`，开发机在 ap-northeast-2）✅**：<br>• 直连（SigV4）：新会话 `initialize` 约 4.4 s（冷），复用 `Mcp-Session-Id` 后 `tools/call` 约 0.3 s（热）；经 `mcp-proxy-for-aws` 时每个进程都开新会话，一次调用约 8 s。<br>• 经 Gateway：**每次** `tools/call` 约 4.5–5.5 s（每次都是新 Runtime 会话）。<br>• Runtime 日志显示，server 从进程启动到返回 tools/call 不到 1 s，冷启动的时间主要花在 microVM 分配上。<br>冷启动 + 首次调用远小于 40 s，**不需要预热方案**。而且经 Gateway 时每次调用都是新会话，预热本来也没有效果（取消原来的「演示前预热」和「调大 idle timeout」）。完整 server 实测（P3）✅：<br>• T3.3 直连：共享 session p50 670 ms、p95 2277 ms；每次新 session p50 9111 ms、max 12057 ms。<br>• T3.4 经 Gateway：串行 p50 6158 ms、p95 9516 ms；20 个并发 p50 7159 ms、max 10122 ms。<br>每次调用约 5–10 s 的冷启动开销要从 60 s 预算里扣掉：`query_timeout` 50 s 的查询跑满时，端到端约 56–61 s，可能超过 60 s。T4.4 / T4.6 记录 Quick 侧耗时，单次工具调用 ≥ 45 s 的记下来，T5.5 考虑把 `query_timeout` 调到 40–45 s |
 | profile 体积 100–200 KB | 上下文溢出 / 响应过慢 | 默认 summary（实测约 9 KB）+ max_chars；需要时再取 full |
-| Quick 的 scope 行为 | PRM 没声明 scope 时，Quick 会用默认 scope，可能导致鉴权失败 | Gateway 设 `allowedScopes=[doris-mcp/invoke]`，它会写进 PRM，Quick 按 PRM 请求 scope ✅；**P0 已实测关闭**：User auth、Service auth 都在 scope 限制下成功（§4.5）。回退手段保留：先用 `GW_ALLOWED_SCOPES=` 去掉 scope 限制，再不行改用 Service auth |
+| Quick 的 scope 行为 | PRM 没声明 scope 时，Quick 会用默认 scope，可能导致鉴权失败 | Gateway 设 `allowedScopes=[doris-mcp/invoke]`，它会写进 PRM，P0 实测 User auth、Service auth 都在 scope 限制下成功（§4.5），**功能上已关闭**。但「Quick 按 PRM 请求 scope」**未证实**（v0.6 更正，P0 评审 M-1：请求不带 scope 时 Cognito 会授予 client 的全部 scope），T4.1 用浏览器 authorize URL 确认。回退手段保留：先用 `GW_ALLOWED_SCOPES=` 去掉 scope 限制，再不行改用 Service auth |
 | Gateway 与 Quick 两层工具缓存 | 改了工具但 Quick 看不到 | 固定流程：deploy → synchronize-gateway-targets → Quick Sync → 启用新工具 |
 | 工具名前缀 `doris___` | skill 里写的工具名对不上 | adapter skill 明确说明两种写法 |
 | `mcp-proxy-for-aws` 与 Runtime URL 不兼容 | ~~备份路径不可用~~ 只影响开发机冒烟（D9 后不再是演示路径）| ✅ T0.4 已验证兼容；已关闭 |
 | agentcore CLI v0.30 与旧仓库验证的 v0.19 有差异 | 部署命令或 schema 不同 | T0.4 先 `agentcore validate`；以 CLI 实际生成的文件为准。✅ P0 已用 0.30.0 跑通 create / validate / deploy / status，实际行为见 §7 |
 | `agentcore deploy` 修改账号级 X-Ray 设置 | Transaction Search indexing rule 被设为 100%，影响账号里其他产生 span 的工作负载的索引费用 | 用户决定 rule 保持 100%；部署机上设置 `~/.agentcore/config.json` `"disableTransactionSearch": true`（开发机已设）；deploy 类 GATE 要说明这一点（§7）|
 | v1 profile API 跨用户可见 | 能看到其他用户的 SQL 文本 | D4 开关（self 模式同时关闭跨用户回退）；这是 Doris 自身的行为，写进风险说明 |
-| stateless MCP 每次请求都重新 initialize | 延迟增加 | ✅ T0.6 已测：经 Gateway 时每次 `tools/call` 都是新 Runtime 会话，约 4.5–5.5 s（spike）。T3.3 用完整 server 再测；明显影响体验时，再试给 target 同时放行 `Mcp-Session-Id` 请求头和响应头（§4.5，走 GATE）|
+| stateless MCP 每次请求都重新 initialize | 延迟增加 | ✅ T0.6 已测：经 Gateway 时每次 `tools/call` 都是新 Runtime 会话，约 4.5–5.5 s（spike）。完整 server 实测 ✅：T3.3 共享 session p50 670 ms，每次新 session p50 9111 ms；T3.4 经 Gateway p50 6158 ms（每次都是新 microVM）。T4.4 记录 Quick 侧的体验；明显影响体验时，再试给 target 同时放行 `Mcp-Session-Id` 请求头和响应头（§4.5，走 GATE）|
 | 请求日志泄漏 SQL / 凭证 | upstream `RequestLoggerMiddleware` 会把 header 和 body 写进 CloudWatch | 入口不挂它（P-01）；只有审计日志进 stderr；T1.8 对所有日志 grep 真实密码，命中数必须为 0 |
 | 主路由表挂 S3 Gateway endpoint、Interface endpoint 开 private DNS | 影响整个 default VPC | 对 S3 无副作用；Doris EC2 没有 instance profile，不调用 logs/secretsmanager |
-| Gateway 每次调用都是新 microVM，池连接不被关闭（P3 发现）| 残留连接按 Doris 默认 `wait_timeout` 留 8 小时，累积到 `mcp_svc` 的 `max_user_connections = 100` 后出现 `Too many connections` | 补丁 P-09：池连接 `SET wait_timeout = 600`，残留连接最多 10 分钟（§5.2）。T3.4 在 20 个并发后看连接数，11 分钟后再看一次；连接数超过 80 就停下来，和用户商量调高上限、缩短 `session_wait_timeout_seconds` 或 Runtime 的空闲超时 |
+| Gateway 每次调用都是新 microVM，池连接不被关闭（P3 发现）| 残留连接按 Doris 默认 `wait_timeout` 留 8 小时，累积到 `mcp_svc` 的 `max_user_connections = 100` 后出现 `Too many connections` | 补丁 P-09：池连接 `SET wait_timeout = 600`，残留连接最多 10 分钟（§5.2）。T3.4 实测 ✅：20 个并发后有 24 个连接（Sleep 23），11 分钟后只剩 1 个（Query），P-09 在线验证通过。之后每次在 Quick 里跑完一轮（T4.4、T5.4）都看一次连接数；超过 80 就停下来，和用户商量调高上限、缩短 `session_wait_timeout_seconds` 或 Runtime 的空闲超时 |
 | 同一个 MCP session 里的并发调用（P3 发现）| spec 阶段在本机一个共享 session 里跑 20 个并发：24 个调用 6 个 `SERVICE_NOT_READY`（语义层重新加载期间，同一进程里的语义层工具都返回这个错误），p95 13.8 s | 经 Gateway 时每次调用在自己的 microVM 里，不会重叠，`pool_max_size = 5` 也不是瓶颈（各有各的池）；T3.4 经 Gateway 实测 20 个并发。只有复用 Runtime session 的客户端会遇到，出现时说明 Gateway 在复用 session |
-| 新 microVM 首次用语义层要重新加载（P3 发现）| 本机实测第一次 `list_metrics` 11.5 s、`reload_semantic_layer` 7.7 s；经 Gateway 时每次语义层调用都在新 microVM 里，都要付这笔开销 | 计入 60 s 预算；T3.3（共享 session 和 `--fresh`）、T3.4（经 Gateway）用 `mcp_smoke.py time` 逐次测，超过 60 s 的调用停下来和用户商量（P0 M-4：探针在仓库里，可重跑）|
+| 新 microVM 首次用语义层要重新加载（P3 发现）| 本机实测第一次 `list_metrics` 11.5 s、`reload_semantic_layer` 7.7 s；经 Gateway 时每次语义层调用都在新 microVM 里，都要付这笔开销 | 计入 60 s 预算；T3.3（共享 session 和 `--fresh`）、T3.4（经 Gateway）用 `mcp_smoke.py time` 逐次测，超过 60 s 的调用停下来和用户商量（P0 M-4：探针在仓库里，可重跑）。实测 ✅：经 Gateway 最慢的是语义层调用，约 9.5–10.1 s（串行时 `list_dimensions_for_metric` 9516 ms、`reload_semantic_layer` 9507 ms，20 个并发时 `list_metrics` 10122 ms）|
 | 私网 IP 出现在日志和返回里（P3 发现）| Runtime 的 CloudWatch 日志（启动行、连接池、FE HTTP URL）有 Doris 私网 IP；`get_query_profile` 返回的 profile 里有 BE 节点 IP | 日志组只在本账号内可见；profile 是演示要看的内容，不改。计划里所有输出都经 IP / URL 的 sed，日志只计数；P5 录屏时注意 |
 | Doris 连不上时的错误消息带 host（P3 发现）| pymysql 的 2003 消息含 Doris 地址；upstream `sensitive_mask` 只遮密码和 token，这条消息会经 Gateway 原样返回给 Quick | 已知风险，T3.4 不为了测它而断网；是否补丁在 T5.5 与 Gateway DEBUG 一起决定（§14）|
 | CodeZip 的传递依赖漂移（P3 发现）| pyproject 只锁直接依赖，CodeZip 按 aarch64 解析到的传递依赖可能与测试过的 `.venv` 不同 | T3.2 锁定 `caio`、`platformdirs`，并用检查脚本对比 88 个 dist；deploy 后再对 staging 目录跑一次 |

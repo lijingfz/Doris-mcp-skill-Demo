@@ -70,11 +70,17 @@
 
 ## P4 Quick 桌面版（计划：`plans/P4-quick.md`）
 
-| ✓ | ID | 标签 | 任务 | 需求 |
-|---|---|---|---|---|
-| [ ] | T4.1 | [USER] | Cloud Connector Sync → 逐个启用 12 个工具，按 D7 设置权限；核实 Quick 是否按 PRM 请求 scope，并据此修正 design 里的 scope 结论（P0 评审 M-1：请求不带 scope 时 Cognito 会授予 client 的全部 scope，P0 登录成功不能证明 Quick 请求了 scope）| R-10 |
-| [ ] | T4.3 | [AI] | 编写「Doris 专家」agent 指令 `quick/agent-instructions.md`（≤ 5 万字符）| R-51 |
-| [ ] | T4.4 | [USER] | 桌面版创建 Agent，跑「开场 + 第 2 幕」（User auth、Service auth 两个连接器各一次；Local stdio 按 D9 取消，原 T4.2 已删除）；记录 Quick 侧每次工具调用的端到端耗时（P0 评审 M-3：P0 只测了 Gateway 侧）| R-10, R-13 |
+目标：把 12 个工具接进 Quick 桌面版。两个 Cloud Connector 同步后按 D7 设置权限；两个「Doris 专家」agent 用同一份指令，各跑一次「开场 + 第 2 幕」。同时核实 scope 行为（P0 评审 M-1），记录 Quick 侧耗时（M-3）。
+代码（T4.5 的 mask 收口、T4.3 的指令和检查、T4.6 的 Gateway 耗时探针）已在 spec 阶段起草，并在 `96d18ce` 的干净 worktree 上按计划顺序回放过：最终 `doris/test` 161 个、`scripts/test` 75 个、`quick/test` 16 个、`test_agentcore_*.py` 89 个，6 组 shell 测试通过。完整代码嵌在 `plans/P4-quick.md`。P4 没有 GATE：Quick 里的操作由用户执行，AI 侧只做只读核对。
+执行顺序 T4.5 → T4.3 → T4.6 → T4.1 + T4.4（用户一次做完），在分支 `p4-quick` 上执行。
+
+| ✓ | ID | 标签 | 任务 | 需求 | 计划 |
+|---|---|---|---|---|---|
+| [ ] | T4.1 | [USER] | Cloud Connector Sync → 逐个启用 12 个工具，按 D7 设置权限；核实 Quick 是否按 PRM 请求 scope，并据此修正 design 里的 scope 结论（P0 评审 M-1：请求不带 scope 时 Cognito 会授予 client 的全部 scope，P0 登录成功不能证明 Quick 请求了 scope）。AI 侧先做只读预检（Gateway / target READY，经 Gateway 列出 12 个工具并跑参照查询，对账 11/11），事后核对审计日志、连接数和 CloudTrail | R-10 | P4 §T4.1 + T4.4 |
+| [ ] | T4.3 | [AI] | 编写「Doris 专家」agent 指令 `quick/agent-instructions.md`：≤ 5 万字符，分角色、硬约束、演示口径三段（design §8.3），由 `quick/test/test_agent_instructions.py` 的 16 个检查锁住（含指标名、维度名与语义层一致） | R-51 | P4 §T4.3 |
+| [ ] | T4.4 | [USER] | 桌面版创建 Agent，跑「开场 + 第 2 幕」（User auth、Service auth 两个连接器各一次；Local stdio 按 D9 取消，原 T4.2 已删除）；两个连接器各建一个 agent；记录 Quick 侧每个问题的总耗时（秒表）和每次工具调用的耗时（`gw_latency.py`）（P0 评审 M-3：P0 只测了 Gateway 侧）；答案与参照值对照 | R-10, R-13 | P4 §T4.1 + T4.4 |
+| [ ] | T4.5 | [AI] | P3 整体评审和 T3.6 的遗留：<br>`scripts/redact.py` 统一 mask：字面 secret 换成 `***`（长的先换），再把 IPv4 换成 `<ip>`，并接管 MCP SDK 自己的日志行；<br>`mcp_smoke`、`reconcile mcp --url`、`permission_matrix --url` 的错误输出 mask URL 和 token；<br>`agentcore_client` 的 ValueError 不回显 URL，docstring 更正；<br>两处 lazy `sys.path` 改成模块顶部一次；<br>`permission_matrix` 直连模式 mask 拒绝消息里的客户端地址（T3.0 minor）；<br>补 T3.6 M2 的 2 个测试。<br>spec 小修（design §7 / §13、RESUME、tasks 的 T5.5 行）随计划在 Step 1 提交 | R-43（评审项）| P4 §T4.5 |
+| [ ] | T4.6 | [AI] | `scripts/gw_latency.py`：从 CloudWatch 取 Gateway `tools/call` 每分钟、每个工具的调用数、平均耗时和最大耗时。≥ 45 s 标 WARN（留给 T5.5），≥ 60 s 失败；只输出工具名、时间和毫秒数（P0 评审 M-3）| R-12 | P4 §T4.6 |
 
 ## P5 Skills 与彩排（计划：`plans/P5-skills.md`）
 
@@ -83,6 +89,6 @@
 | [ ] | T5.1 | [AI] | 锁定 apache/doris-skills commit；生成导入副本（加 adapter 提示行）到 `quick/skills/` | R-50 |
 | [ ] | T5.2 | [AI] | 编写 `quick/skills/doris-mcp-adapter/SKILL.md`（翻译表、工具名前缀、profile 约定、60 s 限制）| R-50 |
 | [ ] | T5.3 | [USER] | 桌面版导入 skills，验证 adapter 能被自动选中 | R-50 |
-| [ ] | T5.4 | [USER] | 完整彩排 × 2（design §10），记录每步耗时和问题 | R-51 |
-| [ ] | T5.5 | [AI] | 根据彩排结果修正（skill / 指令 / 超时），准备演示前冒烟脚本和演示手册 `quick/runbook.md`（经 Gateway 预热无效，见 design §13） | R-51 |
+| [ ] | T5.4 | [USER] | 完整彩排 × 2（design §10）。彩排前按 D7 把 `execute_query` 改成 Always Allow；记录每步耗时和问题（每次工具调用的耗时用 `gw_latency.py` 取）；每轮之后 AI 跑一次 `mcp_smoke conns`（连接预算）| R-51 |
+| [ ] | T5.5 | [AI] | 根据彩排结果修正（skill / 指令 / 超时），准备演示前冒烟脚本和演示手册 `quick/runbook.md`（经 Gateway 预热无效，见 design §13）。同时决定：<br>Gateway `exceptionLevel` 是否关掉 DEBUG；<br>是否遮 2003 错误里的 Doris 主机地址（design §14）；<br>T4.4 / T5.4 出现单次工具调用 ≥ 45 s 时，把 `query_timeout` 调到 40–45 s；<br>重跑 `30-gateway.sh` 时补上 Gateway description（update 路径不传，现在是 `None`）。<br>演示前冒烟复用 `mcp_smoke`、`reconcile mcp --url`、`gw_latency.py` | R-51 |
 | [ ] | T5.6 | [AI+GATE] | （演示结束后）`infra/99-cleanup.sh` | — |

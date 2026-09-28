@@ -87,7 +87,7 @@ cat infra/state.env                                                       # 已�
 | `git status` 显示有未提交的改动 | 直接说「继续」。Claude 会对照 progress.md 判断归属；判断不了会问你 |
 | GATE 执行到一半断线 | 说「继续」。`infra/*.sh` 可以重复执行，已经存在的资源会跳过；Claude 会先 dry-run，让你确认还剩哪些操作 |
 | 想修改需求或决策 | 直接告诉 Claude。它会先改 `requirements.md` / `design.md`（写明变更原因），再调整计划 |
-| 想推送到远程仓库 | 目前只有本地 git（D8）。需要推送时明确告诉 Claude 推送到哪里 |
+| 想推送到远程仓库 | 远程是私有仓库 `lijingfz/Doris-mcp-skill-Demo`（D8，P2 起推送过）。每次推送都要你明确确认；Claude 不会自己推送，也不会强推 |
 | 想换 commit 作者（当前是仓库内配置的 `ubuntu@主机名`）| 先执行 `git config user.name "…"` 和 `git config user.email "…"`；如果还要改写已有提交的作者，再执行 `git rebase -r --root --exec 'git commit --amend --no-edit --reset-author'` |
 
 ## 文件地图
