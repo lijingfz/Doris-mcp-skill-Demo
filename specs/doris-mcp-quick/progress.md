@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P4 进行中**（`plans/P4-quick.md`，分支 `p4-quick`，执行方式：Native（控制方按 TDD 执行，Task 4 Step 2 由一个 Opus 5.5 reviewer 评审整个分支））。P3 已完成（T3.0–T3.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `b4cbbf2`）；P0–P3 的过程见日志
-- **进行中**：Task 1（T4.5）已完成；Task 2（T4.3）从 Step 1 开始
-- **下一步**：Task 2（T4.3 agent 指令），然后 Task 3（T4.6）、Task 4（T4.1 + T4.4：先整体评审，再交给用户在 Quick 里操作 40–60 分钟）。P4 没有 GATE
+- **进行中**：Task 2（T4.3）已完成；Task 3（T4.6）从 Step 1 开始
+- **下一步**：Task 3（T4.6 `gw_latency.py`），然后 Task 4（T4.1 + T4.4：先整体评审，再交给用户在 Quick 里操作 40–60 分钟）。P4 没有 GATE
 - **注意**：P3 遗留的归属——P3 整体评审 Minor #1、#3、#5、#6 由 design v0.6、RESUME 和 P4 计划关闭（Task 1 Step 1 一起提交），#2 在评审时已更新，#4 和 T3.0 / T3.3 / T3.6 M1、M2 的 mask 遗留由 T4.5 关闭；P0 评审 M-1（scope）→ T4.1，M-3（Quick 侧耗时）→ T4.4 + T4.6。T3.5 之后开发机以 `mcp_svc` 直连 Doris 会 1045，这是预期的，`mcp_svc` 只经 Runtime 检查。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P4 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p4-stage`、`/tmp/p4-replay`、`/tmp/p4-build/` 已在 Task 1 Step 1 删除。**权威版本是 `plans/P4-quick.md` 里嵌入的代码**，用 `/tmp/p4-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -651,3 +651,9 @@
 - GREEN：`scripts/test` 65、`doris/test` 161、`test_agentcore_*.py` 89、upstream 离线、6 组 shell 全部通过；突变 12/12 被抓到，工作区恢复原样。
 - 手工 FAIL 检查：一行 `FAIL: RuntimeError: …`，地址和假 token 计数 0。
 - 在线只读：经 Gateway `list` 12 个；`reconcile.py mcp --url` 11/11；`permission_matrix.py --url` 5/5。只读调用：sts、Cognito（`get-gw-token.sh`）、Gateway MCP、SigV4 `InvokeAgentRuntime`、check-secrets 的 `get-secret-value`。
+
+### 2026-09-28 P4 Task 2（T4.3）：「Doris 专家」agent 指令
+
+- `quick/agent-instructions.md`：角色 / 硬约束 / 演示口径三段（design §8.3），1924 个字符（Quick 上限 5 万）。硬约束 4 条：证据优先（先 `doris___check_service_health`；业务指标先 `doris___list_metrics` 再 `doris___query_metric`，合并调用；不主动 reload）、只读、60 s 超时、不复述连接信息。
+- `quick/test/test_agent_instructions.py` 16 个检查：Shape 2、Rules 9、SemanticLayer 2（`DirectBackend` 本机编译，指标数 22、指标名和维度名都存在）、Hygiene 3（工具名都在 Gateway 的 12 个里且带 `doris___` 前缀；没有 URL / IP / ARN / 账号）。
+- RED：16 个 ERROR（指令文件不存在）；GREEN：16 个 OK；突变 i1–i5 5/5 被抓到。`doris/test` 161、`scripts/test` 65 不变。全部离线。
