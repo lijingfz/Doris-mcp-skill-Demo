@@ -80,7 +80,7 @@
 | [x] | T4.3 | [AI] | 编写「Doris 专家」agent 指令 `quick/agent-instructions.md`：≤ 5 万字符，分角色、硬约束、演示口径三段（design §8.3），由 `quick/test/test_agent_instructions.py` 的 16 个检查锁住（含指标名、维度名与语义层一致） | R-51 | P4 §T4.3 |
 | [ ] | T4.4 | [USER] | 桌面版创建 Agent，跑「开场 + 第 2 幕」（User auth、Service auth 两个连接器各一次；Local stdio 按 D9 取消，原 T4.2 已删除）；两个连接器各建一个 agent；记录 Quick 侧每个问题的总耗时（秒表）和每次工具调用的耗时（`gw_latency.py`）（P0 评审 M-3：P0 只测了 Gateway 侧）；答案与参照值对照 | R-10, R-13 | P4 §T4.1 + T4.4 |
 | [x] | T4.5 | [AI] | P3 整体评审和 T3.6 的遗留：<br>`scripts/redact.py` 统一 mask：字面 secret 换成 `***`（长的先换），再把 IPv4 换成 `<ip>`，并接管 MCP SDK 自己的日志行；<br>`mcp_smoke`、`reconcile mcp --url`、`permission_matrix --url` 的错误输出 mask URL 和 token；<br>`agentcore_client` 的 ValueError 不回显 URL，docstring 更正；<br>两处 lazy `sys.path` 改成模块顶部一次；<br>`permission_matrix` 直连模式 mask 拒绝消息里的客户端地址（T3.0 minor）；<br>补 T3.6 M2 的 2 个测试。<br>spec 小修（design §7 / §13、RESUME、tasks 的 T5.5 行）随计划在 Step 1 提交 | R-43（评审项）| P4 §T4.5 |
-| [ ] | T4.6 | [AI] | `scripts/gw_latency.py`：从 CloudWatch 取 Gateway `tools/call` 每分钟、每个工具的调用数、平均耗时和最大耗时。≥ 45 s 标 WARN（留给 T5.5），≥ 60 s 失败；只输出工具名、时间和毫秒数（P0 评审 M-3）| R-12 | P4 §T4.6 |
+| [x] | T4.6 | [AI] | `scripts/gw_latency.py`：从 CloudWatch 取 Gateway `tools/call` 每分钟、每个工具的调用数、平均耗时和最大耗时。≥ 45 s 标 WARN（留给 T5.5），≥ 60 s 失败；只输出工具名、时间和毫秒数（P0 评审 M-3）| R-12 | P4 §T4.6 |
 
 ## P5 Skills 与彩排（计划：`plans/P5-skills.md`）
 
