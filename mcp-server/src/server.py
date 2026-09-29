@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
 import os
 import re
@@ -127,6 +128,34 @@ def _reload_error_code(msg: str) -> ErrorCode:
     if any(k in lowered for k in ("permission", "denied", "privilege", "access", "forbidden", "grant")):
         return ErrorCode.PERMISSION_DENIED
     return ErrorCode.INTERNAL_ERROR
+
+
+def _audit_error(result: str) -> str | None:
+    """Return "CODE: message" of a failed tool result for the audit log, else None.
+
+    Cut to 300 characters; log_tool_call masks it like the params.
+    """
+    try:
+        body = json.loads(result)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(body, dict) or body.get("success") is not False:
+        return None
+    error = body.get("error")
+    if not isinstance(error, dict):
+        error = {"message": error}
+    text = ": ".join(str(part) for part in (error.get("code"), error.get("message")) if part)
+    return (text or "unknown error")[:300]
+
+
+def _mf_quote(value: str) -> str:
+    """Double-quote a value for the informational mf CLI command in the audit log.
+
+    Masked before escaping: after `"` becomes `\\"`, mask_sensitive's password pattern stops at the
+    backslash, so a double-quoted secret would stay in clear in mf_command.
+    """
+    value = mask_sensitive(value)
+    return '"' + value.replace('"', '\\"') + '"'
 
 
 def _encode_webui_session_cookie(session_id: str, server_ip: str) -> str:
@@ -961,7 +990,7 @@ def create_server(
         actual_success = parsed.get("success", False)
 
         log_tool_call("execute_query", client_id=auth.client_id, params={"sql": mask_sensitive(sql[:200]), "database": database},
-                      success=actual_success, duration_ms=duration, metricflow=False)
+                      success=actual_success, error=_audit_error(result), duration_ms=duration, metricflow=False)
         return result
 
     @mcp.tool(
@@ -1165,12 +1194,23 @@ def create_server(
         from tools.semantic import query_metric as _query_metric
         result = await _query_metric(ws.compiler, pool, metrics, group_by or None, where or None, order_by or None, limit or None, database or None, max_rows or None, having or None)
         duration = (time.monotonic() - start) * 1000
-        success = '"success": true' in result
+        error = _audit_error(result)
         mf_cmd = f"mf query --metrics {','.join(metrics)}"
         if group_by:
             mf_cmd += f" --group-by {','.join(group_by)}"
-        log_tool_call("query_metric", client_id=auth.client_id, params={"metrics": metrics, "group_by": group_by},
-                      success=success, duration_ms=duration, metricflow=True, mf_command=mf_cmd)
+        if where:
+            mf_cmd += f" --where {_mf_quote(where)}"
+        if order_by:
+            mf_cmd += f" --order-by {','.join(order_by)}"
+        if limit:
+            mf_cmd += f" --limit {limit}"
+        if having:
+            mf_cmd += f" --having {_mf_quote(having)}"
+        # where is the resolved filter that was compiled; unset filters are logged empty.
+        log_tool_call("query_metric", client_id=auth.client_id,
+                      params={"metrics": metrics, "group_by": group_by, "where": where, "having": having,
+                              "order_by": order_by, "limit": limit},
+                      success=error is None, error=error, duration_ms=duration, metricflow=True, mf_command=mf_cmd)
         return result
 
     # ========== Manual reload Tool ==========

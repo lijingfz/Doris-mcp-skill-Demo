@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 2（T5.2）已完成；Task 3（T5.7a 代码：P-10、P-11）从 Step 1 开始
-- **下一步**：Task 3（T5.7a 代码），然后 Task 4（T5.7b）、Task 5（demo-check / cleanup 脚本）、Task 6（部署，GATE）、Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
+- **进行中**：Task 3（T5.7a 代码）已完成（P-10、P-11 未部署，Task 6 部署）；Task 4（T5.7b）从 Step 1 开始
+- **下一步**：Task 4（T5.7b），然后 Task 5（demo-check / cleanup 脚本）、Task 6（部署，GATE）、Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -751,3 +751,11 @@
 - RED：20 个 `ERROR`（adapter 的 `SKILL.md` 还不存在）、7 个 `FAIL`（4 个 skill 目录，指令没有第 5 条和时间粒度口径，对账没有 `yoy_same_days_2026_09`）。
 - 按 Subagent-driven 执行（implementer / reviewer 都是 Opus 5.5）。任务评审发现计划原文的 adapter 有 2 处会误导 agent，偏离计划内嵌的原文修正（只加行和句子，计划的突变 ad1–ad14 照常适用）：副本用到的 FE 路径 `/api/query_profile`、`/api/health`、`/api/bootstrap`、`/api/tablets_distribution` 原来落到「问人」，现在各有一行；`SHOW PROCESSLIST` 只看得到服务账号自己的会话，空结果不能当作「没有在跑的查询」。顺带：`check_service_health` 不返回 Doris 版本（改用 `SHOW VARIABLES LIKE 'version_comment'`）、`describe_table` 参数顺序、`max_rows` 不降低查询代价、找不到 profile 时再列一次就停、tablet 副本状态取不到。复审通过。
 - GREEN：`quick/test` 56（原计划 50，多出 adapter 的 6 个检查；后面任务里 `quick/test` 的期望数相应 +6）、`doris/test` 161、`scripts/test` 113；突变 ad 14/14、ai 7/7，修正新增的 14 个突变也全部被抓到。
+
+### 2026-09-29 P5 Task 3（T5.7a 代码）：P-10 审计、P-11 metric_time 过滤
+
+- P-10（`src/server.py`）：失败的 `execute_query` / `query_metric` 的审计记录带 `error`（`CODE: message`，300 字符，经 mask）；`query_metric` 的成败取自解析后的结果，审计记下 `where`、`having`、`order_by`、`limit`，`mf_command` 补上对应的选项（先 mask 再转义双引号）。
+- P-11（`src/store/compiler.py`）：OR 包住 metric_time 条件时返回编译错误（`INTERNAL_ERROR`，提示每个范围调用一次或用 `*_last_year`）；NOT 紧挨或包住 metric_time 条件时同样返回编译错误（提示按要的范围分次调用）；`>` / `<` 严格比较；多个条件取交集；只认 `TimeDimension('metric_time', …)` 和整词的 `metric_time`；括号包住的范围不再留下 `( AND )`。按分组粒度对齐（MetricFlow 的设计）不改，测试锁定现状。
+- RED：`test_agentcore_audit_errors` 整个模块 `ERROR`（没有 `_audit_error`）；`test_agentcore_time_constraints` 35 个里 19 个 `FAIL`，`test_semantic_time` 7 个里 5 个 `FAIL`；其余已有的测试通过。
+- 按 Subagent-driven 执行（implementer / reviewer 都是 Opus 5.5）。任务评审发现计划原文有 2 处缺陷，偏离计划内嵌的原文修正（计划的突变 p10 / p11 照常适用）：P-11 去掉标记后，`NOT (metric_time …) AND x` 变成能执行但结果错的查询（NOT 落到下一个条件上、范围没有取反），P-11 之前是会报错的破损 SQL，现在改为编译错误；`mf_command` 先转义再 mask，双引号里的密码会以明文进审计，现在先 mask。顺带给 `metric_time` 加词边界（`first_metric_time` 不再被当成时间条件）。复审通过，约 50 个 NOT 的对抗输入没有错误输出。
+- GREEN：`test_agentcore_*.py` 153（原计划 141，多出修正的 12 个；后面任务里的期望数相应 +12）、`doris/test` 168、`quick/test` 56、`scripts/test` 113、upstream 离线测试通过；突变 p10 21/21、p11 20/20，修正新增的 12 个突变也全部被抓到。还没有部署（Task 6）。

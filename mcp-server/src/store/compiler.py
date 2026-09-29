@@ -17,6 +17,21 @@ _SENTINEL_NO_JSON = object()
 _STRING_LITERAL_RE = re.compile(r"'(?:[^'\\]|\\.|'')*'|\"(?:[^\"\\]|\\.|\"\")*\"")
 _MASKED_LITERAL_RE = re.compile("\x00(\\d+)\x00")
 
+# Returned to the calling agent (via query_metric's compile error) for an OR around metric_time.
+_METRIC_TIME_OR_ERROR = (
+    "metric_time filters must be a single range joined with AND (no OR around a metric_time "
+    "condition). Make one query_metric call per range; for period-over-period comparisons use "
+    "the offset metrics (e.g. *_last_year) grouped by metric_time instead."
+)
+
+# Returned to the calling agent (via query_metric's compile error) for a NOT around metric_time.
+_METRIC_TIME_NOT_ERROR = (
+    "metric_time filters cannot be negated with NOT (no NOT before a metric_time condition or "
+    "before a parenthesized group containing one). Query the wanted ranges instead, with one "
+    "query_metric call per range: e.g. one for the period before and one for the period after "
+    "the excluded period."
+)
+
 # Try to import MetricFlow engine
 _ENGINE_AVAILABLE = False
 try:
@@ -525,22 +540,31 @@ class MetricFlowCompiler:
           "metric_time >= '2026-02-01' AND metric_time <= '2026-02-28'"  → start, end, remaining=None
           "metric_time >= '2026-02-01' AND channel = 'APP'"  → start, remaining="channel = 'APP'"
           "{{ TimeDimension('metric_time', 'day') }} >= '2026-02-01'"  → same
+          "metric_time BETWEEN '2026-02-01' AND '2026-02-28'"  → start, end
+          "metric_time >= '2026-08-01' AND metric_time < '2026-09-01'"  → start, end=datetime(2026,8,31)
+          "(metric_time >= '2026-01-01' AND metric_time < '2026-02-01') AND channel = 'X'"  → remaining="channel = 'X'"
+
+        The range is inclusive: `>` / `<` move a date-only bound by one day, a bound with a time
+        part by one second. Several conditions intersect (latest start, earliest end). Only
+        metric_time is extracted (bare, metric_time__<grain> or TimeDimension('metric_time', ...));
+        other time dimensions stay in the where. A metric_time condition inside a group that has
+        a top-level OR (its own parenthesis level or an enclosing one; quoted literals ignored)
+        raises ValueError. So does a NOT directly before a metric_time condition or before the
+        "(" of a group enclosing it: the range cannot be negated, and dropping the condition would
+        leave the NOT on the next filter. A bare metric_time must be a whole word.
 
         Returns (remaining_where, time_start, time_end).
         """
         if not where or not where.strip():
             return None, None, None
 
-        from datetime import datetime
+        from datetime import datetime, timedelta
         import re
 
-        time_start = None
-        time_end = None
-
-        # Match patterns: metric_time >= 'date' or "date", {{ TimeDimension(...) }} >= 'date'
+        # Match patterns: metric_time >= 'date' or "date", {{ TimeDimension('metric_time', ...) }} >= 'date'
         # Supports both single and double quotes around dates
         _TIME_PATTERN = re.compile(
-            r"""(?:{{[^}]*TimeDimension\([^)]*\)[^}]*}}|metric_time(?:__\w+)?)\s*"""
+            r"""(?:{{[^}]*TimeDimension\(\s*['"]metric_time['"][^)]*\)[^}]*}}|\bmetric_time(?:__\w+)?)\s*"""
             r"""(>=?|<=?|BETWEEN)\s*['"](\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2})?)['"]"""
             r"""(?:\s+AND\s+['"](\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2})?)['"])?""",
             re.IGNORECASE
@@ -554,37 +578,78 @@ class MetricFlowCompiler:
                     continue
             return datetime.strptime(s[:10], "%Y-%m-%d")
 
+        def _scan(text: str) -> tuple[list[int], set[int]]:
+            """Parentheses still open at the end of text (-1 = top level) and the groups with an OR."""
+            stack, with_or = [-1], set()
+            for token in re.finditer(r"[()]|\bOR\b", text, re.IGNORECASE):
+                if token.group() == "(":
+                    stack.append(token.start())
+                elif token.group() == ")":
+                    if len(stack) > 1:
+                        stack.pop()
+                else:
+                    with_or.add(stack[-1])
+            return stack, with_or
+
         # Collect all matches first, then remove them from the string
         matches = list(_TIME_PATTERN.finditer(where))
         if not matches:
             return where, None, None
 
+        # A time constraint applies to the whole query, so it cannot stand for one branch of an OR.
+        # Literals are blanked (same length) so a quoted OR or parenthesis does not count.
+        masked = _STRING_LITERAL_RE.sub(lambda m: " " * len(m.group(0)), where)
+        or_groups = _scan(masked)[1]
+        if any(or_groups.intersection(_scan(masked[:match.start()])[0]) for match in matches):
+            raise ValueError(_METRIC_TIME_OR_ERROR)
+
+        # A NOT cannot be carried by the time constraint; the cleanup below would move it onto the
+        # next filter. Checked directly before each match and before every "(" still open there.
+        def _negated(end: int) -> bool:
+            return re.search(r"\bNOT\s*\Z", masked[:end], re.IGNORECASE) is not None
+
+        for match in matches:
+            if _negated(match.start()) or any(_negated(p) for p in _scan(masked[:match.start()])[0][1:]):
+                raise ValueError(_METRIC_TIME_NOT_ERROR)
+
+        starts: list[datetime] = []
+        ends: list[datetime] = []
         for match in matches:
             op = match.group(1).upper()
             date1 = match.group(2)
             date2 = match.group(3)
+            step = timedelta(days=1) if len(date1) == 10 else timedelta(seconds=1)
 
             if op == "BETWEEN" and date2:
-                time_start = _parse_dt(date1)
-                time_end = _parse_dt(date2)
-            elif op in (">=", ">"):
-                time_start = _parse_dt(date1)
-            elif op in ("<=", "<"):
-                time_end = _parse_dt(date1)
+                starts.append(_parse_dt(date1))
+                ends.append(_parse_dt(date2))
+            elif op == ">=":
+                starts.append(_parse_dt(date1))
+            elif op == ">":
+                starts.append(_parse_dt(date1) + step)
+            elif op == "<=":
+                ends.append(_parse_dt(date1))
+            elif op == "<":
+                ends.append(_parse_dt(date1) - step)
 
-        if time_start is None and time_end is None:
+        if not starts and not ends:
             return where, None, None
+        # AND-ed conditions intersect
+        time_start = max(starts, default=None)
+        time_end = min(ends, default=None)
 
-        # Remove matched spans from string (reverse order to preserve positions)
+        # Replace each matched span with a TRUE marker, then drop the markers together with their
+        # AND and the parentheses left around them: "(a AND b) AND c" -> "c".
         remaining = where
         for match in reversed(matches):
-            remaining = remaining[:match.start()] + remaining[match.end():]
-
-        # Robust cleanup of remaining string
-        for _ in range(3):
-            remaining = re.sub(r'^\s*AND\s+', '', remaining, flags=re.IGNORECASE)
-            remaining = re.sub(r'\s+AND\s*$', '', remaining, flags=re.IGNORECASE)
-            remaining = re.sub(r'\s+AND\s+AND\s+', ' AND ', remaining, flags=re.IGNORECASE)
+            remaining = remaining[:match.start()] + "\x01" + remaining[match.end():]
+        previous = None
+        while remaining != previous:
+            previous = remaining
+            remaining = re.sub(r"\(\s*\x01\s*\)", "\x01", remaining)
+            remaining = re.sub(r"\x01\s*\bAND\b\s*", "", remaining, flags=re.IGNORECASE)
+            remaining = re.sub(r"\s*\bAND\b\s*\x01", "", remaining, flags=re.IGNORECASE)
+        remaining = remaining.replace("\x01", "")
         # Strip whitespace, quotes, parentheses that are now empty wrappers
         remaining = remaining.strip()
         remaining = re.sub(r'^["\'\s()]+$', '', remaining)  # Only quotes/parens/spaces → empty
