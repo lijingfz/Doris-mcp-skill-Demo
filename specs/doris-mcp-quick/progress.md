@@ -5,7 +5,7 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 7 Step 1（指南、交接清单、手册）已提交；Step 2（整体评审）从头开始
+- **进行中**：Task 7 Step 2（整体评审）已完成；Step 3（用户导入 skills）从头开始
 - **下一步**：Task 7 Step 2（整体评审，opus），然后 Step 3（用户导入 skills，模板 1）、Step 4（彩排 2 轮，模板 2）；Task 8（T5.5）、Task 9（演示结束后清理，GATE）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
@@ -798,3 +798,15 @@
 - 评审（opus）通过；手册「演示后」让用户用 root 执行 Doris 侧的 DROP，是计划原文的写法，属于写操作由人工执行，接受；手册里步骤 5 被追问时怎么回复、测试里重复行查不出来，留给 Task 8。
 - RED：13 个 `ERROR`（10 个检查，有的带 subTest），都是 `FileNotFoundError`（3 个文档还不存在），`quick/test` 其余 56 个通过。
 - GREEN：`quick/test` 66；突变 docs 15/15 被抓到。T5.7b 勾选（M-7–M-10 全部完成）。
+
+### 2026-09-29 P5 整体评审（opus）
+
+- 范围：`main..p5-skills` 的全部提交（除去 upstream 的 4 个副本和计划本身），经 MASK，IP 计数 0；6015 行、39 个文件。另外给了评审前面各任务留下的 Minor 和 4 处有意偏离计划原文的地方（adapter 的补充、P-11 对 NOT 报错、`git apply -C2`、指南的 R1/R2），评审认为 4 处都正确。
+- 结论：Ruling: ready（修复后同一个评审再看一次，仍是 ready）。Critical：无。Important：1 条（评审标为 Minor，控制方按 Review Focus 4 升为 Important，是计划规定的行为）：P-11 只把 `metric_time` 上的条件当作时间范围，旧 server 连 `order_date` 也当作时间范围；`get_query_guide` 的示例用 `order_date`，agent 照着写时 `gmv_last_year`、`gmv_yoy` 会静默变成 0 → `quick/agent-instructions.md` 加一条「时间过滤只写在 metric_time 上」+ 测试（`quick/test` 67），不改 server、不重新部署，提交 `8ea8e0d`；彩排时核对审计里的 where 有没有 `order_date`；server 侧要不要修（把 agg-time 的 TimeDimension 也当作时间范围，或者报编译错误）由 Task 8 决定。
+- Minor（Task 8 决定）：
+  - `99-cleanup.sh` 删 Cognito 域名后紧接着删 user pool，没有等域名删完（可能失败；重跑能恢复）。
+  - `demo-check post` 的耗时窗口向下取整到分钟，会把 `pre` 最后一分钟的调用算进去。
+  - `99-cleanup.sh` 的 FATAL 直接打印 AWS 原始错误，dry-run 打印资源 ID 和 Cognito 域名前缀（没有 IP、URL、token）。
+  - adapter 的 `profile list --limit N` 没写 1–100 的范围。
+  - 手册没说清理后 CDKToolkit 栈和它的 bucket 会保留。
+  - 前面任务留下的：check-secrets 的两个跳过分支（账号、错误类型、区域）、`minute_ceil` 截掉毫秒、`bash -x` 会打印 token 和密码、`!IsEgress` 没有测试、Gateway 有第二个 target 时中途失败、VPC endpoint 删除失败要等 300 s 才报、`TOKEN_CMD` 默认值不看 `STATE_FILE`；Task 3、4 的边界情况（mask 只认 IPv4、where/having 不截断、stdio 的 URL 形式等）不在演示路径上，列入后续清单。
