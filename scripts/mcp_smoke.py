@@ -13,9 +13,10 @@ Examples:
 
 The bearer token is read from the named environment variable and never printed. `time` and `conns`
 print status, timings, error codes and counts only: never tool output, SQL results, hosts or statements.
-A session or call that raises is one FAIL line with the URL and the token masked as *** and IPv4
-addresses as <ip>; with --url the MCP SDK's own log lines go to stderr masked the same way
-(scripts/redact.py).
+A session or call that raises is one FAIL line with the endpoint URL (--url, or each URL in the --stdio
+command), its host name and the token masked as *** and IPv4 addresses as <ip>; the MCP SDK's own log lines
+go to stderr masked the same way, for every transport (scripts/redact.py). With --stdio the child's own
+stderr (e.g. mcp-proxy-for-aws's log) goes straight to the terminal and is NOT masked by this script.
 Exit code: 0 on success, 1 when a tool call returns an error or a check fails, 2 on a bad calls file.
 """
 
@@ -29,6 +30,7 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastmcp import Client
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
@@ -53,6 +55,14 @@ def build_client(args: argparse.Namespace) -> Client:
         return Client(StreamableHttpTransport(args.url, headers=headers), timeout=args.timeout)
     cmd = shlex.split(args.stdio)
     return Client(StdioTransport(command=cmd[0], args=cmd[1:], env=dict(os.environ)), timeout=args.timeout)
+
+
+def hidden_values(args: argparse.Namespace) -> list[str]:
+    """What error lines and SDK log lines must not show: each endpoint URL, its host name, and the bearer token."""
+    urls = [args.url] if args.url else [w for w in shlex.split(args.stdio or "") if "://" in w]
+    hosts = [urlsplit(u).hostname for u in urls]
+    token = os.environ.get(args.bearer_env, "") if args.bearer_env else ""
+    return [v for v in (*urls, *hosts, token) if v]
 
 
 def result_payload(result) -> object:
@@ -305,9 +315,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 async def main(argv: list[str] | None = None, client_factory=build_client) -> int:
     args = parse_args(argv)
-    hidden = [args.url, os.environ.get(args.bearer_env, "") if args.bearer_env else ""]
-    if args.url:
-        redact.redact_sdk_logs(hidden)
+    hidden = hidden_values(args)
+    redact.redact_sdk_logs(hidden)
     start = time.monotonic()
     try:
         if args.command == "time":

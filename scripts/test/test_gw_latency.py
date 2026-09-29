@@ -2,9 +2,12 @@
 
 import io
 import json
+import os
 import sys
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import gw_latency  # noqa: E402
@@ -18,8 +21,8 @@ def result(id_: str, tool: str, points: dict[str, float]) -> dict:
             "StatusCode": "Complete"}
 
 
-def minute(tool: str, at: str, calls: int, avg: float, peak: float) -> list[dict]:
-    return [result("calls", tool, {at: calls}), result("avg", tool, {at: avg}), result("max", tool, {at: peak})]
+def minute(tool: str, at: str | float, calls: int, total: float, peak: float) -> list[dict]:
+    return [result("calls", tool, {at: calls}), result("sum", tool, {at: total}), result("max", tool, {at: peak})]
 
 
 def doc(*results: dict) -> str:
@@ -35,8 +38,8 @@ def run(stdin: str, *argv: str) -> tuple[int, str]:
 class Queries(unittest.TestCase):
     def test_one_search_per_statistic_labelled_with_the_tool_name(self):
         queries = gw_latency.queries(ARN)
-        self.assertEqual([q["Id"] for q in queries], ["calls", "avg", "max"])
-        for query, stat in zip(queries, ("SampleCount", "Average", "Maximum")):
+        self.assertEqual([q["Id"] for q in queries], ["calls", "sum", "max"])
+        for query, stat in zip(queries, ("SampleCount", "Sum", "Maximum")):
             self.assertEqual(query["Label"], "${PROP('Dim.Name')}")
             expression = query["Expression"]
             self.assertTrue(expression.startswith(
@@ -59,17 +62,57 @@ class Queries(unittest.TestCase):
                 self.assertEqual(out.getvalue(), "FAIL: --gateway-arn is not a Gateway ARN\n")
 
 
+class Minute(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(time.tzset)  # runs after TZ is restored
+        self.enterContext(mock.patch.dict(os.environ, {"TZ": "IST-5:30"}))  # a local zone that is not UTC
+        time.tzset()
+
+    def test_every_form_becomes_the_utc_minute(self):
+        for at in (1790557500, 1790557559.9, "2026-09-28T01:05:00Z", "2026-09-28T01:05:00+00:00",
+                   "2026-09-28T01:05:59.999Z", "2026-09-28T09:05:00+08:00", "2026-09-27T20:35:00-04:30",
+                   "2026-09-28T01:05:00"):
+            with self.subTest(at=at):
+                self.assertEqual(gw_latency._minute(at), "2026-09-28T01:05")
+
+    def test_an_offset_can_change_the_day(self):
+        self.assertEqual(gw_latency._minute("2026-09-28T05:05:00+08:00"), "2026-09-27T21:05")
+
+
 class Report(unittest.TestCase):
     def test_one_line_per_minute_and_tool_in_time_order(self):
         rc, out = run(doc(*minute("doris___query_metric", T3, 1, 9269, 9269),
                           *minute("doris___check_service_health", T1, 1, 5432, 5432),
-                          *minute("doris___list_metrics", T3, 2, 6100.4, 6752)))
+                          *minute("doris___list_metrics", T3, 2, 12200.8, 6752)))
         self.assertEqual(rc, 0, out)
         self.assertEqual(out.splitlines(), [
             "tools/call: 4 calls in 3 rows (tool x minute), max 9269 ms (doris___query_metric at 2026-09-27T13:51)",
             "  2026-09-27T13:49  doris___check_service_health           1 calls  avg    5432 ms  max    5432 ms",
             "  2026-09-27T13:51  doris___list_metrics                   2 calls  avg    6100 ms  max    6752 ms",
             "  2026-09-27T13:51  doris___query_metric                   1 calls  avg    9269 ms  max    9269 ms",
+            "  [PASS] every minute under 60000 ms",
+        ])
+
+    def test_series_of_one_tool_and_minute_merge(self):
+        # SEARCH returns one series per value of any other dimension: calls and sums add up, max is the largest.
+        rc, out = run(doc(*minute("doris___query_metric", T1, 2, 10000, 7000),
+                          *minute("doris___query_metric", T1, 3, 5000, 2500)))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out.splitlines(), [  # avg = 15000 / 5; the mean of the series' averages would be 3333
+            "tools/call: 5 calls in 1 rows (tool x minute), max 7000 ms (doris___query_metric at 2026-09-27T13:49)",
+            "  2026-09-27T13:49  doris___query_metric                   5 calls  avg    3000 ms  max    7000 ms",
+            "  [PASS] every minute under 60000 ms",
+        ])
+
+    def test_the_same_minute_in_any_timestamp_form_merges(self):
+        rc, out = run(doc(*minute("doris___list_tables", "2026-09-27T13:49:00Z", 1, 4000, 4000),
+                          *minute("doris___list_tables", T1, 1, 6000, 6000),
+                          *minute("doris___list_tables", "2026-09-27T21:49:30+08:00", 2, 5000, 3000),
+                          *minute("doris___list_tables", 1790516940, 1, 1000, 1000)))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out.splitlines(), [
+            "tools/call: 5 calls in 1 rows (tool x minute), max 6000 ms (doris___list_tables at 2026-09-27T13:49)",
+            "  2026-09-27T13:49  doris___list_tables                    5 calls  avg    3200 ms  max    6000 ms",
             "  [PASS] every minute under 60000 ms",
         ])
 

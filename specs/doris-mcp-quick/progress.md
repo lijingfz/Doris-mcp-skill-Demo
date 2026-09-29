@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 3（T5.7a 代码）已完成（P-10、P-11 未部署，Task 6 部署）；Task 4（T5.7b）从 Step 1 开始
-- **下一步**：Task 4（T5.7b），然后 Task 5（demo-check / cleanup 脚本）、Task 6（部署，GATE）、Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
+- **进行中**：Task 4（T5.7b 的 3 个脚本）已完成（M-7 在 Task 7 写进 runbook 后勾选 T5.7b）；Task 5（demo-check / cleanup / 30-gateway）从 Step 1 开始
+- **下一步**：Task 5（demo-check / cleanup 脚本），然后 Task 6（部署，GATE）、Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -759,3 +759,13 @@
 - RED：`test_agentcore_audit_errors` 整个模块 `ERROR`（没有 `_audit_error`）；`test_agentcore_time_constraints` 35 个里 19 个 `FAIL`，`test_semantic_time` 7 个里 5 个 `FAIL`；其余已有的测试通过。
 - 按 Subagent-driven 执行（implementer / reviewer 都是 Opus 5.5）。任务评审发现计划原文有 2 处缺陷，偏离计划内嵌的原文修正（计划的突变 p10 / p11 照常适用）：P-11 去掉标记后，`NOT (metric_time …) AND x` 变成能执行但结果错的查询（NOT 落到下一个条件上、范围没有取反），P-11 之前是会报错的破损 SQL，现在改为编译错误；`mf_command` 先转义再 mask，双引号里的密码会以明文进审计，现在先 mask。顺带给 `metric_time` 加词边界（`first_metric_time` 不再被当成时间条件）。复审通过，约 50 个 NOT 的对抗输入没有错误输出。
 - GREEN：`test_agentcore_*.py` 153（原计划 141，多出修正的 12 个；后面任务里的期望数相应 +12）、`doris/test` 168、`quick/test` 56、`scripts/test` 113、upstream 离线测试通过；突变 p10 21/21、p11 20/20，修正新增的 12 个突变也全部被抓到。还没有部署（Task 6）。
+
+### 2026-09-29 P5 Task 4（T5.7b 脚本）：`audit_check --failures`、`gw_latency`、`mcp_smoke`
+
+- `audit_check.py --failures`：摘要之后按时间列出失败的调用（时间、工具、`error` 压成一行并 mask IPv4、截到 200 字符；`query_metric` 另列 `group_by` / `where` / `having`），不输出 SQL、其他参数、MetricFlow 命令、client id；没有 `error` 的旧记录显示 `(not recorded)`；exit code 不变。
+- M-9（`gw_latency.py`）：时间戳（epoch 秒、`Z`、`±HH:MM`、不带时区）统一换成 UTC 分钟；统计量 `Average` 改成 `Sum`，同一工具同一分钟的序列合并（调用数、总耗时相加，平均 = 总耗时 / 调用数）。
+- M-8（`mcp_smoke.py`）：`--stdio` 命令里的 URL、URL 的主机名（DNS 错误只写主机名）进 mask 列表；SDK 日志行对所有 transport 都 mask。`--stdio` 子进程自己的 stderr 不归这个脚本管，docstring 写明（未解决的 Minor）。
+- M-7 留给 Task 7 的 runbook；M-10 已体现在本计划每个提交块的 IP 计数里。
+- RED：25 个 `ERROR`（没有 `--failures`、`_minute`、`hidden_values`）、7 个 `FAIL`（`Average`、序列没合并、stdio 没 mask），其余 112 个通过。
+- GREEN：`scripts/test` 137、`quick/test` 56（Task 2 加了 6 个）、`doris/test` 168；突变 af 13/13、m8 6/6、m9 16/16 被抓到。
+- 评审：与计划 diff 逐字节一致，无 Critical / Important；9 个 Minor（纵深防御和边界输入，都不在 P5 的调用路径上）留给 Task 7 Step 2 的整体评审。

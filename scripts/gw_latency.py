@@ -9,18 +9,23 @@ waits for on each tool call: the number Quick's 60 s limit applies to.
       --metric-data-queries "$q" --output json \\
     | .venv/bin/python scripts/gw_latency.py report
 
-Prints tool names, minutes, call counts and milliseconds only: never the ARN.
+Prints tool names, UTC minutes, call counts and milliseconds only: never the ARN. Series of one tool in one
+minute (SEARCH returns one per value of any other dimension) are merged: calls and sums add up, avg is
+sum / calls, max is the largest.
 Exit code: 0 when every minute stays under --limit-ms (--warn-ms only flags), 1 when one does not or there
 are no datapoints, 2 when the input is not get-metric-data JSON or --gateway-arn is not a Gateway ARN.
 """
 
 import argparse
 import json
+import operator
 import re
 import sys
+from datetime import datetime, timezone
 
 GATEWAY_ARN_RE = re.compile(r"arn:aws:bedrock-agentcore:[a-z0-9-]+:\d{12}:gateway/[A-Za-z0-9-]+")
-STATS = (("calls", "SampleCount"), ("avg", "Average"), ("max", "Maximum"))
+STATS = (("calls", "SampleCount"), ("sum", "Sum"), ("max", "Maximum"))
+MERGE = {"calls": operator.add, "sum": operator.add, "max": max}  # series of one tool in one minute
 
 
 def queries(gateway_arn: str) -> list[dict]:
@@ -31,15 +36,31 @@ def queries(gateway_arn: str) -> list[dict]:
             for id_, stat in STATS]
 
 
+def _minute(at: float | str) -> str:
+    """The UTC minute (YYYY-MM-DDTHH:MM) of epoch seconds or an ISO 8601 time (Z, +HH:MM, or naive = UTC)."""
+    if isinstance(at, (int, float)):
+        moment = datetime.fromtimestamp(at, timezone.utc)
+    else:
+        moment = datetime.fromisoformat(at)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M")
+
+
 def parse_rows(doc: dict) -> dict[tuple[str, str], dict[str, float]]:
-    """{(minute, tool): {"calls": n, "avg": ms, "max": ms}} from the results of queries(); others are skipped."""
+    """{(minute, tool): {"calls": n, "sum": ms, "max": ms, "avg": ms}} from the results of queries(); others are
+    skipped. SEARCH can return several series for one tool (other dimensions): they merge, avg = sum / calls."""
     rows: dict[tuple[str, str], dict[str, float]] = {}
     ids = {id_ for id_, _ in STATS}
     for result in doc["MetricDataResults"]:
         if result.get("Id") not in ids:
             continue
+        id_ = result["Id"]
         for at, value in zip(result.get("Timestamps") or [], result.get("Values") or []):
-            rows.setdefault((str(at)[:16], str(result.get("Label"))), {})[result["Id"]] = float(value)
+            stats = rows.setdefault((_minute(at), str(result.get("Label"))), {})
+            stats[id_] = MERGE[id_](stats[id_], float(value)) if id_ in stats else float(value)
+    for stats in rows.values():
+        stats["avg"] = stats.get("sum", 0) / stats["calls"] if stats.get("calls") else 0
     return rows
 
 

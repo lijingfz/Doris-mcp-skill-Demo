@@ -20,6 +20,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import mcp_smoke  # noqa: E402
 
 SHIPPED_CALLS = Path(__file__).resolve().parents[1] / "smoke_calls.json"
+GW_HOST = "gw-0123.gateway.example.test"
+GW_URL = f"https://{GW_HOST}/mcp"
+RUNTIME_HOST = "runtime-0123.example.test"
+RUNTIME_URL = f"https://{RUNTIME_HOST}/runtimes/rt-0123/invocations?qualifier=DEFAULT"
+PROXY = f"uvx mcp-proxy-for-aws@latest {RUNTIME_URL} --service bedrock-agentcore --region us-east-1"
 OK = json.dumps({"success": True, "data": {}})
 PROCESSLIST = [
     {"Id": 11, "User": "mcp_svc", "Host": "172.31.5.6:40001", "Command": "Query", "Time": "0",
@@ -86,10 +91,10 @@ class _SmokeCase(unittest.IsolatedAsyncioTestCase):
         path.write_text(json.dumps(calls))
         return str(path)
 
-    async def run_main(self, *argv: str) -> tuple[int, str]:
+    async def run_main(self, *argv: str, target: tuple[str, str] = ("--url", "http://fake/mcp")) -> tuple[int, str]:
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            rc = await mcp_smoke.main(["--url", "http://fake/mcp", *argv], client_factory=self.factory)
+            rc = await mcp_smoke.main([*target, *argv], client_factory=self.factory)
         return rc, out.getvalue()
 
 
@@ -276,6 +281,68 @@ class TestErrorsAreMasked(_SmokeCase):
         self.assertEqual(rc, 0)
         self.assertIn("Session termination failed: POST ***", err.getvalue())
         self.assertNotIn("fake/mcp", err.getvalue())
+
+    async def test_a_dns_error_naming_only_the_host_is_masked(self):
+        def unresolved(_args):
+            raise ConnectionError(f"Failed to resolve '{GW_HOST}' ([Errno -2] Name or service not known)")
+
+        self.factory = unresolved
+        rc, out = await self.run_main("list", target=("--url", GW_URL))
+        self.assertEqual(rc, 1)
+        self.assertIn("FAIL: ConnectionError: Failed to resolve '***' ([Errno -2] Name or service not known)\n", out)
+        self.assertNotIn("gw-0123", out)
+
+    async def test_the_url_in_a_stdio_command_is_masked(self):
+        def refused(_args):
+            raise RuntimeError(f"POST {RUNTIME_URL} failed; cannot resolve {RUNTIME_HOST}")
+
+        self.factory = refused
+        rc, out = await self.run_main("list", target=("--stdio", PROXY))
+        self.assertEqual(rc, 1)
+        self.assertIn("FAIL: RuntimeError: POST *** failed; cannot resolve ***\n", out)
+        self.assertNotIn("runtime-0123", out)
+
+    async def test_sdk_log_lines_are_masked_in_stdio_mode(self):
+        real = self.factory
+
+        def logs_the_url(args):
+            logging.getLogger("mcp.client.stdio").warning("Session termination failed: POST %s (%s)",
+                                                          RUNTIME_URL, RUNTIME_HOST)
+            return real(args)
+
+        self.factory = logs_the_url
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc, _ = await self.run_main("list", target=("--stdio", PROXY))
+        self.assertEqual(rc, 0)
+        self.assertIn("WARNING mcp.client.stdio: Session termination failed: POST *** (***)\n", err.getvalue())
+        self.assertNotIn("runtime-0123", err.getvalue())
+
+
+class TestHiddenValues(unittest.TestCase):
+    def hidden(self, *argv: str) -> list[str]:
+        return mcp_smoke.hidden_values(mcp_smoke.parse_args([*argv, "list"]))
+
+    def test_the_url_and_its_host(self):
+        self.assertEqual(self.hidden("--url", GW_URL), [GW_URL, GW_HOST])
+
+    def test_the_host_name_without_port_or_user(self):
+        # A DNS error names the bare host: "Failed to resolve 'gw-0123...' ([Errno -2] ...)".
+        url = f"https://svc@{GW_HOST}:8443/mcp"
+        self.assertEqual(self.hidden("--url", url), [url, GW_HOST])
+
+    def test_the_url_in_a_stdio_command_and_its_host(self):
+        self.assertEqual(self.hidden("--stdio", PROXY), [RUNTIME_URL, RUNTIME_HOST])
+
+    def test_a_stdio_command_without_a_url_hides_nothing(self):
+        self.assertEqual(self.hidden("--stdio", "python -m doris_mcp_server --transport stdio"), [])
+
+    def test_the_bearer_token(self):
+        with mock.patch.dict(os.environ, {"GW_TOKEN": "tok-0123456789abcdef"}):
+            self.assertEqual(self.hidden("--url", GW_URL, "--bearer-env", "GW_TOKEN"),
+                             [GW_URL, GW_HOST, "tok-0123456789abcdef"])
+        with mock.patch.dict(os.environ, {"GW_TOKEN": ""}):
+            self.assertEqual(self.hidden("--url", GW_URL, "--bearer-env", "GW_TOKEN"), [GW_URL, GW_HOST])
 
 
 class TestSigV4Option(unittest.TestCase):

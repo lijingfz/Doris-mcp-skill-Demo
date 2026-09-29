@@ -101,6 +101,125 @@ class TestAuditCheck(_Case):
                 self.assertIn("FAIL: input is not", out)
 
 
+class TestFailures(_Case):
+    """--failures: each failed call's time, tool and error (IPv4-masked, cut), plus query_metric's filters."""
+
+    SUMMARY = ("audit: 2 records (1 ok, 1 failed), 0 unreadable\n"
+               "  execute_query                  0 ok   1 failed  (expected >= 1)\n"
+               "  list_metrics                   1 ok   0 failed  (expected >= 1)\n"
+               "  [PASS] every expected call audited: 2/2 tools\n")
+
+    def two_calls(self) -> str:
+        return events(audit_line("execute_query", False, error="CONNECTION_ERROR: 198.51.100.7"),
+                      audit_line("list_metrics"))
+
+    def test_without_the_flag_the_output_is_unchanged(self):
+        self.assertEqual(self.run_check(self.two_calls(), "--calls", str(self.calls)), (0, self.SUMMARY))
+
+    def test_the_section_follows_the_unchanged_summary(self):
+        rc, out = self.run_check(self.two_calls(), "--calls", str(self.calls), "--failures")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out, self.SUMMARY + "failures: 1\n"
+                              "  2026-09-27T08:00:00+0000  execute_query  CONNECTION_ERROR: <ip>\n")
+
+    def test_the_error_text_is_shown_ip_masked(self):
+        _, out = self.run_check(events(audit_line(
+            "execute_query", False, error="CONNECTION_ERROR: (2003, \"Can't connect to MySQL server on "
+                                          "'198.51.100.7' ([Errno 111] Connection refused)\")")), "--failures")
+        self.assertEqual(out.splitlines()[-2:], [
+            "failures: 1",
+            "  2026-09-27T08:00:00+0000  execute_query  CONNECTION_ERROR: (2003, \"Can't connect to MySQL server "
+            "on '<ip>' ([Errno 111] Connection refused)\")"])
+        self.assertNotIn("198.51.100.7", out)
+
+    def test_a_failure_without_an_error_says_not_recorded(self):
+        # Records written before the server recorded the error text have no "error" key.
+        _, out = self.run_check(events(audit_line("describe_table", False)), "--failures")
+        self.assertEqual(out.splitlines()[-1], "  2026-09-27T08:00:00+0000  describe_table  (not recorded)")
+
+    def test_the_error_is_cut_at_200_chars(self):
+        error = "QUERY_ERROR: " + "x" * 287  # 300 chars, the server's cap
+        _, out = self.run_check(events(audit_line("execute_query", False, error=error)), "--failures")
+        self.assertEqual(out.splitlines()[-1], "  2026-09-27T08:00:00+0000  execute_query  " + error[:200])
+
+    def test_an_address_across_the_cut_is_masked_not_split(self):
+        head = "CONNECTION_ERROR: " + "y" * 172 + " at "  # the address starts at char 194
+        _, out = self.run_check(events(audit_line("execute_query", False, error=head + "203.0.113.45:9030 refused")),
+                                "--failures")
+        self.assertEqual(out.splitlines()[-1],
+                         "  2026-09-27T08:00:00+0000  execute_query  " + (head + "<ip>:9030 refused")[:200])
+        self.assertNotIn("203.0", out)
+
+    def test_a_multi_line_error_stays_on_one_line(self):
+        _, out = self.run_check(events(audit_line("query_metric", False, params={"where": "a = 1\n  AND b = 2"},
+                                                  error="QUERY_ERROR: first line\n  second line")), "--failures")
+        self.assertEqual(out.splitlines()[-2:], ["  2026-09-27T08:00:00+0000  query_metric  QUERY_ERROR: first line "
+                                                 "second line",
+                                                 "      where: a = 1 AND b = 2"])
+
+    def test_query_metric_failures_show_group_by_where_and_having_ip_masked(self):
+        full = {"metrics": "['secret_metric_x']", "group_by": "['metric_time__month', 'user__city']",
+                "where": "{{ Dimension('order__client_ip') }} = '203.0.113.9'", "having": "gmv > 100",
+                "order_by": "['-secret_order_y']", "limit": "10"}
+        _, out = self.run_check(events(
+            audit_line("query_metric", False, params=full, query_path="metricflow",
+                       mf_command="mf query --metrics secret_mf_z", error="INVALID_PARAMS: unknown user__city"),
+            audit_line("query_metric", False, timestamp="2026-09-27T08:01:00+0000",
+                       params={"metrics": "['gmv']", "group_by": "['metric_time__day']"}, error="QUERY_TIMEOUT")),
+            "--failures")
+        self.assertEqual(out.splitlines()[-7:], [
+            "failures: 2",
+            "  2026-09-27T08:00:00+0000  query_metric  INVALID_PARAMS: unknown user__city",
+            "      group_by: ['metric_time__month', 'user__city']",
+            "      where: {{ Dimension('order__client_ip') }} = '<ip>'",
+            "      having: gmv > 100",
+            "  2026-09-27T08:01:00+0000  query_metric  QUERY_TIMEOUT",
+            "      group_by: ['metric_time__day']"])
+        for leaked in ("secret_metric_x", "secret_order_y", "secret_mf_z", "203.0.113.9", "client-abc"):
+            self.assertNotIn(leaked, out)
+
+    def test_never_prints_sql_other_params_or_client_ids(self):
+        _, out = self.run_check(events(
+            audit_line("execute_query", False, error="QUERY_ERROR: Unknown column 'x'"),  # params.sql = SECRET_SQL
+            audit_line("describe_table", False, params={"table": "secret_table_w"}, error="TABLE_NOT_FOUND")),
+            "--failures")
+        self.assertIn("  2026-09-27T08:00:00+0000  describe_table  TABLE_NOT_FOUND", out)
+        for leaked in (SECRET_SQL, "phone", "dim_user", "secret_table_w", "client-abc"):
+            self.assertNotIn(leaked, out)
+
+    def test_failures_are_listed_in_timestamp_order(self):
+        # filter-log-events interleaves the log streams of several runtime sessions.
+        _, out = self.run_check(events(
+            audit_line("list_tables", False, timestamp="2026-09-27T08:02:00+0000", error="E3"),
+            audit_line("describe_table", False, timestamp="2026-09-27T08:00:00+0000", error="E1"),
+            audit_line("list_metrics", timestamp="2026-09-27T07:59:00+0000"),
+            audit_line("execute_query", False, timestamp="2026-09-27T08:01:00+0000", error="E2"),
+            audit_line("get_query_profile", None, timestamp="2026-09-27T07:58:00+0000", error="E0")),  # not True
+            "--failures")
+        self.assertIn("audit: 5 records (1 ok, 4 failed)", out)
+        self.assertEqual(out.splitlines()[-5:], ["failures: 4",
+                                                 "  2026-09-27T07:58:00+0000  get_query_profile  E0",
+                                                 "  2026-09-27T08:00:00+0000  describe_table  E1",
+                                                 "  2026-09-27T08:01:00+0000  execute_query  E2",
+                                                 "  2026-09-27T08:02:00+0000  list_tables  E3"])
+
+    def test_no_failures(self):
+        rc, out = self.run_check(events(audit_line("list_metrics")), "--failures")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out.splitlines()[-1], "failures: 0")
+
+    def test_the_exit_code_is_unchanged(self):
+        # Failed tool calls are still audited calls: they alone never fail the check.
+        both_failed = events(*(audit_line(t, False, error="QUERY_TIMEOUT") for t in ("execute_query", "list_metrics")))
+        self.assertEqual(self.run_check(both_failed, "--calls", str(self.calls), "--failures")[0], 0)
+        rc, out = self.run_check(events(audit_line("execute_query", False, error="QUERY_TIMEOUT")),
+                                 "--calls", str(self.calls), "--failures")
+        self.assertEqual(rc, 1)
+        self.assertEqual(out.splitlines()[-2:], ["failures: 1",
+                                                 "  2026-09-27T08:00:00+0000  execute_query  QUERY_TIMEOUT"])
+        self.assertEqual(self.run_check("not json", "--failures")[0], 2)
+
+
 class TestRealAuditLine(_Case):
     def test_reads_what_the_runtime_writes_to_stderr(self):
         # The server's own logging setup (agentcore_ext.app.configure_logging) and audit writer, in a
