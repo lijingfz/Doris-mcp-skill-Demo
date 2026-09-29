@@ -84,11 +84,18 @@
 
 ## P5 Skills 与彩排（计划：`plans/P5-skills.md`）
 
-| ✓ | ID | 标签 | 任务 | 需求 |
-|---|---|---|---|---|
-| [ ] | T5.1 | [AI] | 锁定 apache/doris-skills commit；生成导入副本（加 adapter 提示行）到 `quick/skills/` | R-50 |
-| [ ] | T5.2 | [AI] | 编写 `quick/skills/doris-mcp-adapter/SKILL.md`（翻译表、工具名前缀、profile 约定、60 s 限制）| R-50 |
-| [ ] | T5.3 | [USER] | 桌面版导入 skills，验证 adapter 能被自动选中 | R-50 |
-| [ ] | T5.4 | [USER] | 完整彩排 × 2（design §10）。彩排前按 D7 把 `execute_query` 改成 Always Allow；记录每步耗时和问题（每次工具调用的耗时用 `gw_latency.py` 取）；每轮之后 AI 跑一次 `mcp_smoke conns`（连接预算）| R-51 |
-| [ ] | T5.5 | [AI] | 根据彩排结果修正（skill / 指令 / 超时），准备演示前冒烟脚本和演示手册 `quick/runbook.md`（经 Gateway 预热无效，见 design §13）。同时决定：<br>Gateway `exceptionLevel` 是否关掉 DEBUG；<br>是否遮 2003 错误里的 Doris 主机地址（design §14）；<br>T4.4 / T5.4 出现单次工具调用 ≥ 45 s 时，把 `query_timeout` 调到 40–45 s；<br>重跑 `30-gateway.sh` 时补上 Gateway description（update 路径不传，现在是 `None`）。<br>演示前冒烟复用 `mcp_smoke`、`reconcile mcp --url`、`gw_latency.py` | R-51 |
-| [ ] | T5.6 | [AI+GATE] | （演示结束后）`infra/99-cleanup.sh` | — |
+目标：把 apache/doris-skills 的 4 个 skill 和自写的 `doris-mcp-adapter` 接进「Doris 专家」，按 design §10 完整彩排 2 次，写好演示手册；同时收口 P4 的遗留（审计、metric_time 过滤、脚本 minor），演示结束后清理 AWS 资源。
+代码（skills 生成脚本和副本、adapter、server 补丁 P-10 / P-11、脚本 M-7–M-10、`demo-check.sh`、`99-cleanup.sh`、`30-gateway.sh` 的开关、用户指南和演示手册）已在 spec 阶段完成 TDD，并在 `bcda0f3` 的干净 worktree 上按计划顺序回放过：最终 `doris/test` 168 个、`scripts/test` 137 个、`quick/test` 60 个、`test_agentcore_*.py` 141 个，9 组 shell 测试通过。完整代码嵌在 `plans/P5-skills.md`。
+GATE 3 个：Task 6 重新部署 Runtime；Task 8 重跑 `infra/30-gateway.sh`（只在决定改 Gateway 时）；Task 9 `APPLY=1 infra/99-cleanup.sh`（演示结束后）。
+执行顺序 T5.1 → T5.2 → T5.7a（代码）→ T5.7b → T5.5 / T5.6 的离线脚本 → T5.7a（部署）→ T5.3 + T5.4（用户）→ T5.5 → T5.6，在分支 `p5-skills` 上执行。
+
+| ✓ | ID | 标签 | 任务 | 需求 | 计划 |
+|---|---|---|---|---|---|
+| [ ] | T5.1 | [AI] | 锁定 apache/doris-skills commit `0476f3b`；`scripts/build_skills.py` 从 git 对象生成 4 个副本到 `quick/skills/`（每个 SKILL.md 正文第一行是 adapter 提示；超过 1024 字符的 2 个 description 换成缩写版；修 1 处断链；`UPSTREAM.md` 由同一组常量生成；`--check` 只比较）；`check-secrets.sh` 不再把 Doris 文档 S3 示例里 `aws_secret_access_key` 后面的占位符（`<…>`、`${…}`、`...`、空值）当成泄漏 | R-50 | P5 Task 1 |
+| [ ] | T5.2 | [AI] | 编写 `quick/skills/doris-mcp-adapter/SKILL.md`（翻译表：doriscli 命令、会话变量、SQL、FE / BE HTTP 调用；工具名前缀；带 profile 执行的约定；只读边界；60 s 限制），19 个检查；指令加第 5 条（诊断类问题先加载 adapter）、可用的时间粒度、「同期同天数」、不要用 OR 连接时间范围；对账加 `yoy_same_days_2026_09`（12 个）| R-50, R-51 | P5 Task 2 |
+| [ ] | T5.3 | [USER] | 桌面版导入 5 个 skill（adapter 先导入，`doris-debug` 整个文件夹一次导入），更新两个 agent，按 D7 设置权限；验证 adapter 能被自动选中（A5）；弹出登录页时再看一次 scope（M-1 情况 c）| R-50 | P5 Task 7 |
+| [ ] | T5.4 | [USER] | 完整彩排 × 2（design §10，7 个问题）。每轮前 AI 跑 `demo-check pre`，每轮后跑 `demo-check post`（审计、每分钟的 Gateway 耗时、连接数）并核对答案；D7：`execute_query` 为 Always Allow | R-51 | P5 Task 7 |
+| [ ] | T5.5 | [AI] | 根据彩排结果修正（skill / 指令 / 超时）；`scripts/demo-check.sh`（演示前后的只读检查，复用 `mcp_smoke`、`reconcile mcp --url`、`permission_matrix --url`、`audit_check`、`gw_latency`）；`quick/runbook.md`（彩排后填耗时表）；`infra/30-gateway.sh` 加 `GW_EXCEPTION_LEVEL` 开关，description 放进 create / update 共用的参数。四项决策：<br>Gateway `exceptionLevel` 是否关掉 DEBUG；<br>是否遮 2003 错误里的 Doris 主机地址（design §14）；<br>单次工具调用 ≥ 45 s 时把 `query_timeout` 调到 40–45 s；<br>补上 Gateway description（现在是 `None`；改 Gateway 走 GATE）| R-51 | P5 Task 5 + Task 8 |
+| [ ] | T5.6 | [AI+GATE] | （演示结束后）`infra/99-cleanup.sh`：按依赖顺序删除本项目的 AWS 资源，第一次删除前先做全部检查（账号、标签、名字），默认 dry-run。脚本在 Task 5 写好并对真实账号 dry-run；执行走 GATE。Doris 侧的清理由用户人工执行 | R-44, R-61 | P5 Task 5 + Task 9 |
+| [ ] | T5.7a | [AI+GATE] | P4 遗留（server）：P-10 审计记下失败原因（`error` 不再是 None）和 `query_metric` 的 `where` / `having` / `order_by` / `limit`；P-11 修 metric_time 过滤（OR 报明确的编译错误、`>` / `<` 严格比较、多个条件取交集、带括号的范围）；锁 `botocore`、`rich-rst`、`sse-starlette`（CodeZip 漂移）；重新部署 Runtime（GATE）| R-32, R-51 | P5 Task 3 + Task 6 |
+| [ ] | T5.7b | [AI] | P4 评审 Minor：M-7（审计里的工具名不带前缀，写进手册）、M-8（`mcp_smoke` 的 `--stdio` 也 mask，单独出现的主机名也 mask）、M-9（`gw_latency` 接受数字时间戳，同名的序列合并）、M-10（提交前的 IP 计数在 `$v` 为空时输出 FAIL）；`audit_check.py --failures` 列出失败的调用 | R-43（评审项）| P5 Task 4 |

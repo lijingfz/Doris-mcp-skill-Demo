@@ -1,6 +1,6 @@
 # Doris MCP on AgentCore × Amazon Quick 桌面版 —— 设计
 
-> 版本：**v0.7** · 2026-09-28 · 状态：P4 已按 `plans/P4-quick.md` 实施完成（T4.1、T4.3–T4.6，分支 `p4-quick`），整体评审（opus）已完成；P3 已按 `plans/P3-deploy.md` 实施完成（T3.0–T3.5），整体评审（opus）已完成（0 Critical / 0 Important），已本地合并到 `main`；P2 已按 `plans/P2-doris.md` 实施完成（T2.1–T2.7），整体评审（opus）已完成、I1 已修复并重新发布，已本地合并到 `main`；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
+> 版本：**v0.8** · 2026-09-28 · 状态：P5 进行中（`plans/P5-skills.md`，分支 `p5-skills`）；P4 已按 `plans/P4-quick.md` 实施完成（T4.1、T4.3–T4.6，分支 `p4-quick`），整体评审（opus）已完成；P3 已按 `plans/P3-deploy.md` 实施完成（T3.0–T3.5），整体评审（opus）已完成（0 Critical / 0 Important），已本地合并到 `main`；P2 已按 `plans/P2-doris.md` 实施完成（T2.1–T2.7），整体评审（opus）已完成、I1 已修复并重新发布，已本地合并到 `main`；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
 > 输入材料：`prepare/` 下 4 份文件 + upstream `velodb-mcp-server`（锁定 commit `f235832`）+ 旧仓库 `velodb-mcp-agentcore`（复用流程与脚本）
 > 标注约定：✅ 已实测（本次对真实 Doris / AWS 账号只读验证）· 📄 官方文档确认 · ❓ 待 P0 验证
 
@@ -9,6 +9,7 @@
 | 版本 | 变更 |
 |---|---|
 | v0.1 | 初版（`docs/改造方案.md`），用户 review |
+| v0.8 | P5 计划（`plans/P5-skills.md`）：代码在 spec 阶段完成 TDD，并在 `bcda0f3` 的干净 worktree 上回放；只读核实了 Gateway、Runtime、CDK diff 和 Doris（`demo_ro`）。① skills：锁定 apache/doris-skills `0476f3b`，`scripts/build_skills.py` 从 git 对象生成 4 个副本（每个 SKILL.md 正文第一行是 adapter 提示；2 个超过 1024 字符的 description 换成缩写版；修 1 处断链），`doris-debug` 整个文件夹一次导入，adapter 先导入；adapter 的翻译表覆盖 doriscli 命令、会话变量、SQL 和 FE / BE HTTP 调用（§8.3、§9）。② P4 遗留：P-10 审计记下失败原因和 `query_metric` 的过滤条件；P-11 修 metric_time 过滤（OR、严格比较、交集、括号），旧 server 经 Gateway、新 server 在本机编译后以 `demo_ro` 执行，结果对比写进计划 Task 6（§5.2）；按分组粒度对齐时间范围确认是 MetricFlow 的设计，指令改为「同期同天数」按天分组；脚本 M-7–M-10。③ CodeZip 漂移：`botocore` 1.43.104、`rich-rst` 2.2.0、`sse-starlette` 3.5.0，锁到 `.venv` 的 1.43.103、2.1.0、3.4.11（§5.2 P-07、§13）。④ `scripts/demo-check.sh`（演示前后的只读检查）、`infra/99-cleanup.sh`（按依赖顺序删除，删除前先做全部检查，§7）、`infra/30-gateway.sh` 的 `GW_EXCEPTION_LEVEL` 和 description（§7、§14）。⑤ Runtime 偶发 502 / 冷启动慢：预检只有一项失败时重跑一次（§13）|
 | v0.7 | P4 实测（2026-09-28）：① scope（P0 评审 M-1）：仍**未证实**（`doris-mcp` 的 Sync 没有要求登录；新建 `Doris-Desktop-MCP` 时出现了登录页，但没有读地址）（§4.5、§13）。② Quick 侧耗时（P0 评审 M-3）：每个问题的总耗时 「Doris 专家」网页版约 5 s / 15 s（用户记录）；桌面版（`Doris-Desktop-MCP`）问题 1 的工具调用约 12 s、问题 2 约 2–3 分钟（按工具调用时间估算，未计时）；单次工具调用最长 9863 ms，≥ 45 s 的 0 次；T5.5 不必为此调整 `query_timeout`（§4.4、§13）。③ `doris-mcp`、`doris-mcp-svc`（网页版 Sync）和 `Doris-Desktop-MCP`（在网页版新建、桌面版使用，User auth）各 12 个工具，权限按 D7（`doris-mcp`、`doris-mcp-svc` 的 `execute_query` 用平时的 Ask Each Time；`Doris-Desktop-MCP` 的 `execute_query` 原为 Always Allow（D7 的彩排 / 演示设置，所以第 2 幕的 SQL 没有弹窗），改为 Ask Each Time 后桌面版会弹出允许 / 拒绝）；「Doris 专家」（User auth，桌面版，`Doris-Desktop-MCP`）的「开场 + 第 2 幕」数字与参照值一致（第 2 幕主动把 9 月按相同天数比较）；「Doris 专家（svc）」只在网页版验证了工具调用（client B），答案没有对账。④ 桌面版上 T0.7 建的 `doris-mcp` 刷新不了工具列表（仍是 `doris___net_check`；调用时 Quick 自己返回 HTTP 400，请求没有到 Gateway），所以桌面版改用新建的连接器 |
 | v0.6 | P4 计划（`plans/P4-quick.md`）：代码在 spec 阶段完成 TDD 草稿，并在 `96d18ce` 的干净 worktree 上回放；另外只读核实了 CloudTrail 和 Gateway 指标。① **更正 scope 结论（P0 评审 M-1）**：P0 写的「Quick 按 PRM 请求到了 `doris-mcp/invoke`」证据不足，改为**未证实**，T4.1 用浏览器 authorize URL 确认（§4.5、§13）。CloudTrail `Token_POST` 显示：Service auth 的 token 请求带 `scope=doris-mcp/invoke`，可能来自界面里填的 scope；User auth 的 token 请求不带 scope、带 `resource`；authorize 请求不进 CloudTrail；请求不带 scope 时 Cognito 授予 client 的全部 scope。② **Quick 侧耗时（P0 评审 M-3）**：Quick 从自己的后端调用 Cloud Connector，所以 Gateway 的 InvokeGateway Latency 就是 Quick 每次工具调用等待的时间。新增 `scripts/gw_latency.py`（T4.6）；T4.4 用秒表记总耗时，用它记每次工具调用（§4.4、§13）。③ **URL / IPv4 mask 收口（T4.5）**：`scripts/redact.py` 统一处理，并接管 MCP SDK 自己的日志行（T3.0、T3.3 与 T3.6 M1 / M2 的遗留）。④ §13 写入 T3.3 / T3.4 实测值；§7 的清理一行补上两个 IAM 角色；§8.1 写明 P4 的工具权限；§8.3 两个 agent 各只关联自己的连接器，P4 不挂 skills |
 | v0.5 | P3 计划（`plans/P3-deploy.md`）在 spec 阶段完成 TDD 草稿和只读预验证：① 补丁 **P-09**：Gateway 的每次调用都是新 microVM，销毁时池连接不会被关闭，Doris 默认 `wait_timeout` 28800 s，而 `mcp_svc` 的 `max_user_connections` 是 100；每个池连接执行 `SET wait_timeout = 600`（§5.2、§13）。② Runtime 执行角色改为自建的 `doris-mcp-runtime-role`（`infra/35-runtime-role.sh`，经 `agentcore.json` 的 `executionRoleArn` 导入），只能写自己的日志组、只能读 `doris-mcp/mcp_svc`；`deploy --diff` 确认删除 CDK 角色和 DefaultPolicy、Runtime 原地更新（§7、§14）。③ CodeZip 的传递依赖漂移（`caio`、`platformdirs`），T3.2 锁定并对比 88 个 dist（§5.2、§13）。④ `mcp_svc` 迁到 `'172.31.%'`：先 CREATE 新身份并授权，最后 `DROP USER IF EXISTS 'mcp_svc'@'%'`；之后开发机以 `mcp_svc` 登录会得到 1045（§6.1）。⑤ §13 增加连接泄漏、共享 session 下的并发、语义层加载耗时、日志和返回里的 IP、2003 错误带 host 等风险；§14 Gateway DEBUG 的结论为保留到 T5.5，T3.4 做泄漏检查，另加 FE 审计日志一项 |
@@ -235,9 +236,11 @@ Doris-mcp-skill-Demo/
 | P-04 | `src/server.py` | `create_server(..., service_credentials=None, workspace_dir=None)`：设置了服务凭证时，`auth=None`，`_get_per_user_pool()` 返回服务账号连接池，并调用 `set_service_credentials`；workspace 目录优先用参数，其次 `DORIS_MCP_WORKSPACE_DIR`，最后才是原默认值 | 入站鉴权交给 Runtime IAM / Gateway JWT（D1）|
 | P-05 | `src/tools/profile.py`（新） | 2 个 profile 工具 + `summarize_profile` + `register_profile_tools(mcp, target, scope)`（§5.3） | 替换 `prepare/profile.py` |
 | P-06 | `config/mcp-server.toml`（新） | `query_timeout_seconds = 50`、`pool_max_size = 5`、`query_max_rows = 2000`、`fe_http_port = 8030` | Quick 固定 60 s 超时；限制行数，避免撑爆上下文 |
-| P-07 | `pyproject.toml`（新） | 按 upstream `uv.lock` 锁定的直接依赖 + `mcp==1.28.1`、`starlette==1.3.1`、`boto3==1.43.103` | CodeZip 必须有 pyproject。CLI 用 `uv pip install --target … --python-platform aarch64-manylinux2014 --only-binary :all:` 安装，失败时依次回退 `_2_28`、`_2_34`；`rapidfuzz==3.14.5` 会触发回退到 `_2_28`（正常），安装后约 107 MB（上限 250 MB）。upstream 根目录的 `requirements.txt` 也要一起 vendoring（`test_deps.py` 读它）。P3 T3.2：pyproject 只锁直接依赖，CodeZip 解析到的 `caio` 0.12.9、`platformdirs` 4.12.0 比 `.venv` 新，所以再锁 `caio==0.12.5`、`platformdirs==4.11.15`，并用检查脚本对比 CodeZip 与 `.venv` 的 88 个 dist |
+| P-07 | `pyproject.toml`（新） | 按 upstream `uv.lock` 锁定的直接依赖 + `mcp==1.28.1`、`starlette==1.3.1`、`boto3==1.43.103` | CodeZip 必须有 pyproject。CLI 用 `uv pip install --target … --python-platform aarch64-manylinux2014 --only-binary :all:` 安装，失败时依次回退 `_2_28`、`_2_34`；`rapidfuzz==3.14.5` 会触发回退到 `_2_28`（正常），安装后约 107 MB（上限 250 MB）。upstream 根目录的 `requirements.txt` 也要一起 vendoring（`test_deps.py` 读它）。P3 T3.2：pyproject 只锁直接依赖，CodeZip 解析到的 `caio` 0.12.9、`platformdirs` 4.12.0 比 `.venv` 新，所以再锁 `caio==0.12.5`、`platformdirs==4.11.15`，并用检查脚本对比 CodeZip 与 `.venv` 的 88 个 dist。P5：`botocore` 1.43.104（`boto3` 的依赖）、`rich-rst` 2.2.0（`cyclopts` 的）、`sse-starlette` 3.5.0（`mcp` 的）发布后，CodeZip 解析到新版（`.venv` 是 1.43.103、2.1.0、3.4.11），再锁这 3 个（共 5 个传递依赖），部署前后都用检查脚本确认 0 个不同 |
 | P-08 | `test/test_agentcore_*.py`（新） | settings、store 兜底、service 模式、profile（`httpx.MockTransport`）、12 个工具 + Draft 7、HTTP app `/ping` + initialize | upstream 的离线测试保持全部通过 |
 | P-09 | `src/config/loader.py` + `src/core/connection.py` + `config/mcp-server.toml`（P3 T3.0） | `[query] session_wait_timeout_seconds`（`ClusterConfig.session_wait_timeout`，默认 `None`）；不为 `None` 时 `ConnectionPool` 给 `aiomysql.create_pool` 传 `init_command="SET wait_timeout = N"`；仓库配置设为 `600` | Gateway 的每次调用都是新 microVM，microVM 销毁时池连接不会被关闭。没有 P-09 时它们在 Doris 上留 8 小时（默认 `wait_timeout` 28800），会耗尽 `max_user_connections = 100`。600 必须大于 `pool_idle_timeout_seconds = 300`（aiomysql 的 `pool_recycle`），否则池里的空闲连接会先被 Doris 关掉。没设这一项时行为与 upstream 相同 |
+| P-10 | `src/server.py`（P5 T5.7a）| 失败的 `execute_query` / `query_metric` 的审计记录带 `error`（`CODE: message`，300 字符，经 mask）；`query_metric` 的成败取自解析后的结果，审计记下解析后的 `where` 以及 `having`、`order_by`、`limit`，`mf_command` 补上 `--where` / `--order-by` / `--limit` / `--having` | P4 发现：失败调用的审计记录 `error` 是 None，`query_metric` 的审计没有过滤条件，事后分不清失败的原因；`scripts/demo-check.sh post` 按它列出失败的调用 |
+| P-11 | `src/store/compiler.py`（P5 T5.7a）| `_extract_time_constraints`：OR 包住 metric_time 条件时抛 `ValueError`（作为编译错误返回，提示每个范围调用一次）；严格的 `>` / `<` 把边界移 1 天（带时间部分时 1 s）；只提取 `TimeDimension('metric_time', …)`；多个条件取交集；带括号的范围不留下 `( AND )` | spec 阶段经 Gateway 实测旧 server：OR 连接两个范围、括号包住的范围都报 Doris 语法错误，`>` / `<` 按闭区间处理，多个条件只取最后一个。按分组粒度对齐时间范围是 MetricFlow 的设计（`reconcile` 的 `yoy_2026` 依赖它），不改；`NOT` 包住 metric_time 不在 P-11 范围内 |
 
 > v0.1 中的 P-07（ENABLE_WEBUI）和 P-08（SEED_EXAMPLE）已删除，原因见 §4.6。
 > 工具数：upstream 10 个 + `list_recent_queries` + `get_query_profile` = **12**。工具名不带 `_tool` 后缀。
@@ -366,9 +369,9 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 | `agentcore deploy`（`dorismcp/`）| P0 / P3 | Runtime `dorismcp`：CodeZip、PYTHON_3_12、protocol MCP、**AWS_IAM**、VPC（3 个子网 + `doris-mcp-rt`）；P0 的 envVars：`DORIS_HOST/PORT/HTTP_PORT`；P3 增加 `DORIS_SECRET_ID=doris-mcp/mcp_svc`、`PROFILE_SCOPE=all`，codeLocation 换成 `../mcp-server/`，执行角色换成 `doris-mcp-runtime-role`（`executionRoleArn`；CDK 不再生成角色）|
 | `infra/35-runtime-role.sh` | P3 | IAM 角色 `doris-mcp-runtime-role`：信任 `bedrock-agentcore.amazonaws.com`（限本账号、本区域）；内联策略 `doris-mcp-runtime` 只允许写 `/aws/bedrock-agentcore/runtimes/dorismcp_dorismcp-*` 日志组、`logs:DescribeLogGroups`，以及对 `DORIS_SECRET_ARN` 这一个 secret 的 `secretsmanager:GetSecretValue`（secret 用 AWS 托管密钥，不需要 `kms:Decrypt`）；ARN 写入 `state.env` 的 `RT_ROLE_ARN`，`scripts/render-agentcore.py --phase server` 把它写进 `agentcore.json` |
 | `infra/20-cognito.sh` | P0 | user pool `doris-mcp-quick`（只允许管理员建用户）、域名前缀 `doris-mcp-890717383483`、resource server `doris-mcp`（scope `invoke`）；client A `quick-user`（授权码 + PKCE，带 secret，callback 见 §4.4，scope `openid doris-mcp/invoke`）；client B `quick-service`（client_credentials，scope `doris-mcp/invoke`）；演示用户 `demo`（密码存入 Secrets Manager `doris-mcp/cognito-demo-user`）|
-| `infra/30-gateway.sh` | P0 | IAM 角色 `doris-mcp-gateway-role`（信任 `bedrock-agentcore.amazonaws.com`，限定 SourceAccount；只允许对该 runtime 调用 `InvokeAgentRuntime`）；Gateway `doris-mcp-gw`（MCP，CUSTOM_JWT，allowedClients = A、B，allowedScopes = `doris-mcp/invoke`）；target `doris`（mcpServer endpoint = Runtime invoke URL，GATEWAY_IAM_ROLE）|
+| `infra/30-gateway.sh` | P0 | IAM 角色 `doris-mcp-gateway-role`（信任 `bedrock-agentcore.amazonaws.com`，限定 SourceAccount；只允许对该 runtime 调用 `InvokeAgentRuntime`）；Gateway `doris-mcp-gw`（MCP，CUSTOM_JWT，allowedClients = A、B，allowedScopes = `doris-mcp/invoke`）；target `doris`（mcpServer endpoint = Runtime invoke URL，GATEWAY_IAM_ROLE）。P5：`GW_EXCEPTION_LEVEL`（默认 `DEBUG`；空串时不传 `--exception-level`；其他值拒绝）；description 放进 create 和 update 共用的参数（`update-gateway` 会替换整个配置，P3 同步时 description 被清空）|
 | `infra/40-doris-secret.sh` | P2 | Secret `doris-mcp/mcp_svc`（`{"username":"mcp_svc","password":<get-random-password>}`）|
-| `infra/99-cleanup.sh` | 结束 | 按标签删除 endpoint、Gateway、Cognito、secret、SG 规则；runtime 用 `agentcore` 命令删除（CDK 栈 `AgentCore-dorismcp-default`）。IAM 角色 `doris-mcp-gateway-role`、`doris-mcp-runtime-role` 不在栈里，删栈之后单独删除：先删内联策略，再删角色（两个角色都有 `Project` 标签）|
+| `infra/99-cleanup.sh` | P5（T5.6）| 只删 `state.env` 记录的资源，按依赖顺序：① Gateway target，再删 Gateway；② 栈 `AgentCore-dorismcp-default`（Runtime），等到 DELETE_COMPLETE；③ VPC endpoints S3 / logs / secretsmanager，等它们消失；④ Cognito 域名（有域名的 user pool 删不掉），再删 user pool；⑤ 2 个 secret（默认 7 天恢复期，`FORCE_DELETE_SECRETS=1` 立即删除）；⑥ `doris-demo-sg` 上只删引用 `doris-mcp-rt` 的入站规则，其他规则不碰；⑦ 等 Runtime 的 ENI 释放（删栈之后还要几分钟），撤销两个 SG 之间的引用，删除 `doris-mcp-rt`、`doris-mcp-vpce`；⑧ IAM 角色 `doris-mcp-gateway-role`、`doris-mcp-runtime-role`（先删内联策略）。第一次删除之前先做全部检查：调用者账号 = `ACCOUNT_ID`，每个资源都带 `Project=doris-mcp-demo`（栈是 `agentcore:project-name=dorismcp`），Gateway 名为 `doris-mcp-gw`；任何不符或意外错误都 FATAL，一个都不删。已经不存在的资源跳过，中断后可以重跑。不碰 `state.env`（作为记录保留）、日志组、X-Ray 设置和其他项目；Doris 侧（`DROP USER mcp_svc`、`DROP DATABASE system_mcp`）由用户人工执行 |
 
 **Runtime invoke URL**：`https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/<URL 编码后的 Runtime ARN>/invocations?qualifier=DEFAULT`
 
@@ -431,7 +434,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
   - 「Doris 专家」关联 `doris-mcp`（User auth，主路径）；
   - 「Doris 专家（svc）」关联 `doris-mcp-svc`（Service auth，备份路径）。
   - 两个连接器暴露的工具名都是 `doris___*`，一个 agent 同时关联两个连接器会出现重名工具。
-  - P4 不挂 skills；§9 的 skills 在 P5（T5.3）加上。
+  - P5（T5.3）：「Doris 专家」（桌面版关联 `Doris-Desktop-MCP`）挂上 §9 的 5 个 skill；指令第 5 条要求诊断类问题先加载 `doris-mcp-adapter`（Quick 不一定会自动选中它，T5.3 A5 实测）。
 - 指令只写三件事：
   - 角色：基于真实 ecom 集群的 Doris 专家；
   - 硬约束：证据优先、只读、DDL 只给出不执行；外加 60 s 超时和不复述连接信息；
@@ -445,10 +448,10 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 
 | 步骤 | 做法 |
 |---|---|
-| 1. 获取 | `git clone apache/doris-skills`，锁定 commit |
-| 2. 导入 | 桌面版 **Customize → Skills → From folder**：`doris-debug`（含子 skill，按需逐个导入）、`doris-profile-reader`、`doris-best-practices`、`doris-architecture-advisor`；每个 ≤ 6 MB |
+| 1. 获取 | `git clone apache/doris-skills`，锁定 commit `0476f3b`（`scripts/build_skills.py` 的 `LOCKED_COMMIT`；文件从 git 对象读取，不读 clone 的工作区）|
+| 2. 导入 | 桌面版 **Customize → Skills → From folder**，按顺序导入 `quick/skills/` 的 5 个文件夹：`doris-mcp-adapter`（先导入）、`doris-debug`（**整个文件夹一次导入**，子文件夹作为参考文件随它导入）、`doris-profile-reader`、`doris-best-practices`、`doris-architecture-advisor`；每个 < 1 MB（上限 6 MB）。upstream 的 `doris-repo-review`（审 Doris 源码的 PR，不连集群）不导入；`LICENSE.txt`、`CLI-CONTRACT.md`、`UPSTREAM.md` 随副本保存，不导入 |
 | 3. adapter skill | 自写 `quick/skills/doris-mcp-adapter/SKILL.md`，description 写「在本环境执行任何 doris-* skill 前必读」。正文：① 本环境**没有 doriscli**；② 下方翻译表；③ 工具名可能带 `doris___` 前缀（经 Gateway），也可能不带（Local 直连）；④ 带 profile 执行的约定写法；⑤ 只读边界和 60 s 超时（大查询先 EXPLAIN、加 LIMIT）；⑥ 证据优先 |
-| 4. 副本内提示 | 在导入的每个 doris-* skill **副本**的 `SKILL.md` 顶部加一行「Environment: use doris-mcp-adapter for tool mapping」（不改 upstream，只改导入的副本；由脚本生成）|
+| 4. 副本内提示 | `scripts/build_skills.py` 生成副本：每个 `SKILL.md`（含 `doris-debug` 的子 skill）正文第一行是提示「Environment: Amazon Quick with the Doris MCP tools (`doris___*`), not `doriscli`. Load the `doris-mcp-adapter` skill …」；`doris-architecture-advisor`、`doris-best-practices` 的 description 超过 Quick 的 1024 字符，换成保留全部触发词的缩写版；修 1 处断链（`03-case-index.md` → `03-cir-case-index.md`）；`UPSTREAM.md` 由同一组常量生成。不改 upstream；`--check` 确认副本等于锁定 commit 加这些改动 |
 
 **doriscli → MCP 翻译表**（写入 adapter skill）
 
@@ -457,7 +460,8 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 | `doriscli sql "<SELECT/SHOW/DESC/EXPLAIN>"` | `execute_query(sql, database)` |
 | `doriscli sql ... --profile` | `execute_query("SELECT /*+SET_VAR(enable_profile=true)*/ ... /* trace:X */")` → `list_recent_queries(sql_contains="X")` → `get_query_profile(qid)` |
 | `doriscli profile get <qid>` | `get_query_profile(qid, mode="summary")`，需要时用 `mode="full"` |
-| `doriscli profile list [--active]` | `list_recent_queries(limit, user)` |
+| `doriscli profile list` | `list_recent_queries(limit, user)` |
+| `doriscli profile list --active` | `execute_query("SHOW PROCESSLIST")`（正在运行的查询；`list_recent_queries` 只列已结束的）|
 | `doriscli profile diff a b` | 调用两次 `get_query_profile`，由 agent 对比 |
 | `doriscli profile history "<pat>"` | `list_recent_queries(sql_contains=pat)`（只覆盖已采集 profile 的查询；audit_log 当前未启用）|
 | `doriscli tablet db.t` | `execute_query("SHOW DATA SKEW FROM db.t")` + `SHOW TABLETS FROM db.t` + `SHOW COLUMN STATS db.t` |
@@ -493,7 +497,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 | **P2 Doris 与语义层** | §6：secret、账号、授权、ecom 语义模型发布（方案 C）| `mcp_svc` 权限矩阵 14/14（`SHOW GRANTS` 恰好是 R-42 + Doris 默认项、store 初始化成功、9 个写探针全部被拒）；经 MCP server 的 `query_metric` 与故事线 SQL 11/11 到分一致，已发布的 22 个指标与本地模型一致 |
 | **P3 AgentCore 部署** | P2 评审遗留 M1–M4 + 补丁 P-09；Runtime 切换为 `mcp-server/`，接入 secret，执行角色换成专用角色；同步 Gateway target；`mcp_svc` host 收紧（`plans/P3-deploy.md`）| SigV4 直连冒烟通过（12 个工具、flow 6/6）；Gateway token 冒烟通过（`doris___*` 12 个、flow 6/6）；CloudWatch 能看到每次调用的审计日志；冷启动 + 典型查询 < 60 s（串行和 20 个并发，探针可重跑）；残留连接空闲 600 s 后被 Doris 回收；Gateway DEBUG 返回里没有 IP / 密码 / 栈；`mcp_svc` host 收紧为 `'172.31.%'`，经 Runtime 复核 5/5、对账 11/11；R-40 复核 |
 | **P4 Quick 桌面版** | §8：① 主路径（User auth）+ 备份路径（Service auth，D9）+ Agent；T4.5 URL / IPv4 mask 收口；T4.6 Gateway 侧耗时探针（`plans/P4-quick.md`）| 两条路径都能完成 §10 的「开场 + 第 2 幕」，数字与参照值一致；工具权限按 D7 设置；每个问题的总耗时和每次工具调用的耗时都有记录（M-3），没有 424；scope 行为有结论（M-1）|
-| **P5 Skills 与彩排** | §9 导入与 adapter；§10 完整彩排 2 次 | Track A、Track B 端到端无人工干预（执行 DDL 除外）；记录每步耗时（经 Gateway 时每次工具调用都含冷启动，预热无效，见 §13）|
+| **P5 Skills 与彩排** | §9 导入与 adapter；§10 完整彩排 2 次；P4 遗留（审计 P-10、metric_time 过滤 P-11、脚本 M-7–M-10）；演示前后检查 `scripts/demo-check.sh`；清理 `infra/99-cleanup.sh`（`plans/P5-skills.md`）| Track A、Track B 端到端无人工干预（执行 DDL 除外）；记录每步耗时（经 Gateway 时每次工具调用都含冷启动，预热无效，见 §13）|
 
 ---
 
@@ -523,10 +527,13 @@ D1–D8 已于 2026-09-26 确定，完整结论见 `requirements.md` 文末。�
 | 同一个 MCP session 里的并发调用（P3 发现）| spec 阶段在本机一个共享 session 里跑 20 个并发：24 个调用 6 个 `SERVICE_NOT_READY`（语义层重新加载期间，同一进程里的语义层工具都返回这个错误），p95 13.8 s | 经 Gateway 时每次调用在自己的 microVM 里，不会重叠，`pool_max_size = 5` 也不是瓶颈（各有各的池）；T3.4 经 Gateway 实测 20 个并发。只有复用 Runtime session 的客户端会遇到，出现时说明 Gateway 在复用 session |
 | 新 microVM 首次用语义层要重新加载（P3 发现）| 本机实测第一次 `list_metrics` 11.5 s、`reload_semantic_layer` 7.7 s；经 Gateway 时每次语义层调用都在新 microVM 里，都要付这笔开销 | 计入 60 s 预算；T3.3（共享 session 和 `--fresh`）、T3.4（经 Gateway）用 `mcp_smoke.py time` 逐次测，超过 60 s 的调用停下来和用户商量（P0 M-4：探针在仓库里，可重跑）。实测 ✅：经 Gateway 最慢的是语义层调用，约 9.5–10.1 s（串行时 `list_dimensions_for_metric` 9516 ms、`reload_semantic_layer` 9507 ms，20 个并发时 `list_metrics` 10122 ms）|
 | 私网 IP 出现在日志和返回里（P3 发现）| Runtime 的 CloudWatch 日志（启动行、连接池、FE HTTP URL）有 Doris 私网 IP；`get_query_profile` 返回的 profile 里有 BE 节点 IP | 日志组只在本账号内可见；profile 是演示要看的内容，不改。计划里所有输出都经 IP / URL 的 sed，日志只计数；P5 录屏时注意 |
-| Doris 连不上时的错误消息带 host（P3 发现）| pymysql 的 2003 消息含 Doris 地址；upstream `sensitive_mask` 只遮密码和 token，这条消息会经 Gateway 原样返回给 Quick | 已知风险，T3.4 不为了测它而断网；是否补丁在 T5.5 与 Gateway DEBUG 一起决定（§14）|
-| CodeZip 的传递依赖漂移（P3 发现）| pyproject 只锁直接依赖，CodeZip 按 aarch64 解析到的传递依赖可能与测试过的 `.venv` 不同 | T3.2 锁定 `caio`、`platformdirs`，并用检查脚本对比 88 个 dist；deploy 后再对 staging 目录跑一次 |
+| Doris 连不上时的错误消息带 host（P3 发现）| pymysql 的 2003 消息含 Doris 地址；upstream `sensitive_mask` 只遮密码和 token，这条消息会经 Gateway 原样返回给 Quick | 已知风险，T3.4 不为了测它而断网；是否补丁在 T5.5 与 Gateway DEBUG 一起决定（§14，`plans/P5-skills.md` Task 8）。演示手册「出问题时」：回答里出现地址不要念出来，录屏剪掉 |
+| CodeZip 的传递依赖漂移（P3 发现）| pyproject 只锁直接依赖，CodeZip 按 aarch64 解析到的传递依赖可能与测试过的 `.venv` 不同 | T3.2 锁定 `caio`、`platformdirs`，并用检查脚本对比 88 个 dist；P5 spec 阶段又发现 `botocore`、`rich-rst`、`sse-starlette` 3 个有新版，Task 6 锁到 `.venv` 的版本；执行时检查脚本列出更多的包，同样锁定。每次 deploy 前后都对 staging 目录跑检查脚本 |
+| Runtime 偶发 502 / 冷启动慢（P5 发现）| spec 阶段连续 3 次 `demo-check pre`，有 2 次各有 1 项失败（Runtime 返回 502，或冷启动慢到 Gateway 报错），重跑就通过 | 平台侧的偶发问题，不改代码。演示前预检只有一项失败时重跑一次，同一项连续两次失败才排查（`quick/runbook.md`）；彩排中出现时记下时间，T5.5 对照审计日志 |
+| 用 OR 连接几个 metric_time 范围（P5 发现）| 旧 server 把条件删成 `() OR ()`，Doris 报语法错误，agent 会换写法反复重试 | P-11 改成明确的编译错误，并提示改法（每个范围调用一次，或用去年同期指标）；指令写明一次调用只写一个时间范围 |
+| adapter skill 没被自动选中 | agent 照 doriscli 的写法让用户去运行命令 | 指令第 5 条要求诊断类问题先加载 `doris-mcp-adapter`；每个副本的 SKILL.md 第一行也指向它；T5.3 A5 实测，没选中就改 description 或指令 |
 | upstream 版本漂移 | 补丁冲突 | vendoring 并锁定 commit；每处补丁单独提交，升级时 rebase |
-| Doris 单节点 | 演示过程中 FE/BE 挂掉 | 演示前跑冒烟脚本；Doris 运维手册 §8 已有处理步骤 |
+| Doris 单节点 | 演示过程中 FE/BE 挂掉 | 演示前跑 `scripts/demo-check.sh pre`；Doris 运维手册 §8 已有处理步骤 |
 | 会话中断 | 进度丢失 | spec + progress + state.env + 每个任务一个 commit（R-60）；在 tmux 中运行 |
 
 ---
@@ -537,12 +544,12 @@ D1–D8 已于 2026-09-26 确定，完整结论见 `requirements.md` 文末。�
 - [ ] 密码只存在于 Secrets Manager 和项目外的 `credentials.env`；`agentcore.json`、脚本、文档、git 历史里都没有明文；每次提交前运行 `scripts/check-secrets.sh`
 - [ ] `mcp_svc` 最小权限：`SHOW GRANTS` 恰好是 R-42 + Doris 默认项，没有 ADMIN，9 个写探针全部被 Doris 拒绝（P2 T2.3 权限矩阵）；语义层发布不执行任何 GRANT（§6.3）；P3 后 host 收紧为 `'172.31.%'`（T3.5，§6.1）
 - [ ] Runtime 执行角色、Gateway 服务角色、本机 proxy 用户都按具体 ARN 授权。P0：Gateway 服务角色已满足 ✅；**Runtime 执行角色**是 CDK 默认生成的，带通配权限（§7），**P3 T3.1 / T3.2 换成 `doris-mcp-runtime-role`**：只能写 `runtimes/dorismcp_dorismcp-*` 日志组，只能 `GetSecretValue` `DORIS_SECRET_ARN` 这一个 secret；CDK 角色删除
-- [ ] Gateway `--exception-level DEBUG` 会把错误详情返回给客户端（§4.5）。**P3 复查结论：保留到 T5.5**（P4 接入 Quick 和 P5 彩排时排错要用），T3.4 对 6 类错误调用做泄漏检查：IPv4、密码、栈的计数都必须是 0，不是 0 时停下来，和用户商量是否提前调低（GATE）；T5.5 决定是否关闭，同时决定是否遮 2003 消息里的 host（§13）
+- [ ] Gateway `--exception-level DEBUG` 会把错误详情返回给客户端（§4.5）。**P3 复查结论：保留到 T5.5**（P4 接入 Quick 和 P5 彩排时排错要用），T3.4 对 6 类错误调用做泄漏检查：IPv4、密码、栈的计数都必须是 0，不是 0 时停下来，和用户商量是否提前调低（GATE）；T5.5 决定是否关闭，同时决定是否遮 2003 消息里的 host（§13）。P5：`infra/30-gateway.sh` 加 `GW_EXCEPTION_LEVEL` 开关（默认 DEBUG），T5.5（Task 8）按彩排结果决定，改 Gateway 走 GATE
 - [ ] Doris FE 审计日志（`fe.audit.log`）可能记下 `CREATE USER` / `ALTER USER … IDENTIFIED BY` 的明文密码：P3 T3.5 请用户在 Doris 主机上只输出计数检查；不是 0 时停下来商量（轮换密码也会被审计）
 - [ ] Cognito client secret 只填在 Quick 连接器里；不使用长期静态 token；Cognito 只允许管理员建用户
 - [ ] CloudWatch 审计日志保留 SQL（upstream 的 `sensitive_mask` 保持开启）
 - [ ] **旧公开仓库 `doris-mcp-agentcore` 的 `deploy.conf` 里有明文 root 密码**：如果这个密码在任何环境中仍在使用，请轮换，并清理该仓库的 git 历史（与本项目无关，但这个安全项还没有关闭）
-- [ ] 演示结束后执行 `infra/99-cleanup.sh`，删除 Interface endpoints（持续计费）
+- [ ] 演示结束后执行 `infra/99-cleanup.sh`（T5.6，`plans/P5-skills.md` Task 9）：先 dry-run，GATE 确认后 `APPLY=1`；删除 Interface endpoints（持续计费）和本项目的全部 AWS 资源（§7）；Doris 侧的 `mcp_svc`、`system_mcp` 由用户人工删除
 
 ## 15. 成本（us-east-1，粗估）
 

@@ -83,7 +83,8 @@ cat infra/state.env                                                       # 已�
 
 | 情况 | 怎么办 |
 |---|---|
-| `/tmp/p1-draft` 不见了（机器重启过）| 不影响。P1 的完整代码已经写在 `plans/P1-mcp-server.md` 里，照计划执行即可 |
+| `/tmp` 下的临时文件不见了（机器重启过）| 不影响。每个阶段的完整代码都嵌在 `plans/*.md` 里；说「继续」，Claude 会先按计划的「从计划取文件」一节把工具和文件重新取出来 |
+| 演示当天 | 按 `quick/runbook.md` 执行：演示前 30 分钟内让 Claude 跑 `scripts/demo-check.sh pre`（约 1.5 分钟），结束后跑 `post`；清理 AWS 资源要在演示结束后单独确认（GATE）|
 | `git status` 显示有未提交的改动 | 直接说「继续」。Claude 会对照 progress.md 判断归属；判断不了会问你 |
 | GATE 执行到一半断线 | 说「继续」。`infra/*.sh` 可以重复执行，已经存在的资源会跳过；Claude 会先 dry-run，让你确认还剩哪些操作 |
 | 想修改需求或决策 | 直接告诉 Claude。它会先改 `requirements.md` / `design.md`（写明变更原因），再调整计划 |
@@ -98,5 +99,6 @@ cat infra/state.env                                                       # 已�
 | `CLAUDE.md` | Claude 怎么继续（恢复协议）+ 硬性规则 |
 | `specs/doris-mcp-quick/progress.md` | **当前状态** + 日志 |
 | `specs/doris-mcp-quick/tasks.md` | 总任务清单（P0–P5）|
-| `specs/doris-mcp-quick/plans/` | 分阶段的详细计划（P0、P1 已写好；P2–P5 开始前再写）|
+| `specs/doris-mcp-quick/plans/` | 分阶段的详细计划（P0–P5 已写好）|
 | `specs/doris-mcp-quick/requirements.md` / `design.md` | 需求与设计 |
+| `quick/runbook.md` | 演示手册：演示前的检查、设置、演示流程、出问题时怎么办、演示后、每步耗时（P5 写好）|
