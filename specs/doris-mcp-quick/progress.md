@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 6（T5.7a 部署）已完成：Runtime version 3；Task 7 从 Step 1（用户指南、演示手册）开始
-- **下一步**：Task 7（写指南和手册 → 整体评审 → 用户导入 skill → 彩排 2 轮），然后 Task 8（T5.5）、Task 9（演示结束后清理，GATE）
+- **进行中**：Task 7 Step 1（指南、交接清单、手册）已提交；Step 2（整体评审）从头开始
+- **下一步**：Task 7 Step 2（整体评审，opus），然后 Step 3（用户导入 skills，模板 1）、Step 4（彩排 2 轮，模板 2）；Task 8（T5.5）、Task 9（演示结束后清理，GATE）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -788,3 +788,13 @@
 - `agentcore deploy --diff`：只有 Runtime 的 CodeZip 路径变化；staging 88 个 dist 和 `.venv` 一致；工具定义没有变化，target 不同步。
 - GATE：用户确认「确认部署」后 `agentcore deploy -y`：9 个步骤 SUCCESS，`Total Duration: 1m 12s`；Runtime `status=READY version=3`，ARN / URL 不变，`state.env` 不变。`deployed-state.json` 重写后内容不变（`deployHash` 跟随项目配置，不跟随代码包），所以没有进这个提交。
 - 部署后：`demo-check pre` 10/10（对账 12/12、权限矩阵 5/5）；7 个探针中 strict（3 天）、intersect（交集 5 天）、mixed（1 行）、or（`INTERNAL_ERROR: MetricFlow compile error: metric_time filters must be a single range joined with AND …`）按预期变化，其余 3 个不变；`demo-check post` 5/5，失败列表是 `flow` 故意触发的 2 个和 or 探针，都带 `error`（`execute_query` 不再是 `(not recorded)`），or 探针还带 `group_by`、`where`、`having`（P-10 实测）。
+
+### 2026-09-29 P5 Task 7 Step 1：用户指南、交接清单、演示手册（M-7）
+
+- `quick/P5-guide.md`：准备（`scp` 拷 `quick/skills`）；Part A 导入 5 个 skill（adapter 先导入，`doris-debug` 整个文件夹一次导入）、更新两个 agent、D7 权限表、A4 scope（只在要求登录时读地址栏）、A5 adapter 会不会被自动选中；Part B 彩排 7 步，每步的期望、参照值（第 2 幕和 P4 相同；9 月同期同天数 +21.87%）和不算失败的情况；2 个回复模板（模板 1 记时区）。
+- `quick/P5-handoff.md`：摘要和清单，模板是指南的副本。
+- `quick/runbook.md`：演示前（`demo-check pre`，只有一项失败时重跑一次）、设置、演示流程、出问题时、演示后（`demo-check post`；M-7：审计里的工具名不带 `doris___` 前缀是正常的；D7 权限改回；T5.6 清理和 Doris 侧的两句 DROP 由用户执行）、每步耗时（Task 8 填写）。
+- 指南和计划原文不同的地方（都是为了和已提交的 adapter 一致；交接清单、手册、测试和原文逐字节相同）：A5 的期望改成「服务账号只能看到自己的会话，请你提供 SQL 或 query_id」；步骤 1 允许用 `SHOW VARIABLES LIKE 'version_comment'` 查版本，没提版本不算失败；步骤 5 补充：第 2 轮可以复用第 1 轮的 profile，agent 追问 SQL 时怎么回复、怎么记，profile 没收集到时「符合期望」填「否」。
+- 评审（opus）通过；手册「演示后」让用户用 root 执行 Doris 侧的 DROP，是计划原文的写法，属于写操作由人工执行，接受；手册里步骤 5 被追问时怎么回复、测试里重复行查不出来，留给 Task 8。
+- RED：13 个 `ERROR`（10 个检查，有的带 subTest），都是 `FileNotFoundError`（3 个文档还不存在），`quick/test` 其余 56 个通过。
+- GREEN：`quick/test` 66；突变 docs 15/15 被抓到。T5.7b 勾选（M-7–M-10 全部完成）。
