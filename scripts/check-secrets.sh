@@ -53,8 +53,9 @@ done
 unset pw
 
 # 2) Generic patterns: AWS access keys, private keys, inline passwords.
-#    Placeholders such as IDENTIFIED BY '<password>' or '${DORIS_RO_PASSWORD}' are not secrets.
-patterns='AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|aws_secret_access_key[[:space:]]*=|IDENTIFIED BY '"'"'[^<$'"'"'][^<'"'"']{3,}'"'"
+#    Placeholders such as IDENTIFIED BY '<password>' or '${DORIS_RO_PASSWORD}' are not secrets, nor is an
+#    aws_secret_access_key whose value is ..., <secret>, ${VAR} or empty (the Doris docs' S3 examples).
+patterns='AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|aws_secret_access_key[[:space:]]*=[[:space:]]*["'"'"']?[^[:space:]<$."'"'"']|IDENTIFIED BY '"'"'[^<$'"'"'][^<'"'"']{3,}'"'"
 for f in "${files[@]}"; do
   if grep -qIE -- "$patterns" "$f"; then
     echo "LEAK: secret-like pattern in $f"

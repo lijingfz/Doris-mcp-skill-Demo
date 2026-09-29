@@ -57,6 +57,24 @@ check "leaked password of the second secret fails the check" "1|yes" \
   "$RC|$(has "$OUT" "LEAK: password of secret doris-mcp/cognito-demo-user found in leaky.log.txt")"
 rm "$TMP/repo/leaky.log.txt"
 
+# Generic patterns: a placeholder after aws_secret_access_key is not a secret, a real-looking value is.
+# The lines are assembled with printf so that this file itself never matches the pattern.
+KEY=aws_secret_access_key
+FAKE_AWS_SECRET="wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY01"  # the shape of AWS's documented example key
+for value in "..." "<secret>" '${AWS_SECRET_ACCESS_KEY}' "" '"<secret>"'; do
+  printf '# be.conf\n%s = %s\n' "$KEY" "$value" > "$TMP/repo/be.conf.md"
+  run_check readable
+  check "placeholder '$value' after $KEY is not a hit" 0 "$RC"
+done
+printf '# be.conf\n%s = %s\n' "$KEY" "$FAKE_AWS_SECRET" > "$TMP/repo/be.conf.md"
+run_check readable
+check "a real-looking $KEY fails the check" "1|yes" "$RC|$(has "$OUT" "LEAK: secret-like pattern in be.conf.md")"
+check "never prints the $KEY value" no "$(has "$OUT" "$FAKE_AWS_SECRET")"
+printf '%s="%s"\n' "$KEY" "$FAKE_AWS_SECRET" > "$TMP/repo/be.conf.md"
+run_check readable
+check "a quoted $KEY without spaces fails the check" 1 "$RC"
+rm "$TMP/repo/be.conf.md"
+
 # An exact-value check that could not run is not a pass (P2 whole review M4).
 run_check unreadable
 check "unreadable secrets fail the check" 1 "$RC"

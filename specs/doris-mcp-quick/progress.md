@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 1（T5.1）：Step 1 已提交计划和 spec 修改（design v0.8、tasks、RESUME）；从 Step 2 继续
-- **下一步**：Task 1 Step 2–6（写失败测试 → 生成副本 → 验证 → 提交），然后 Task 2（T5.2 adapter）、Task 3（T5.7a 代码）、Task 4（T5.7b）、Task 5（demo-check / cleanup 脚本）、Task 6（部署，GATE）、Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
+- **进行中**：Task 1（T5.1）已完成；Task 2（T5.2）从 Step 1 开始
+- **下一步**：Task 2（T5.2 adapter + 指令），然后 Task 3（T5.7a 代码）、Task 4（T5.7b）、Task 5（demo-check / cleanup 脚本）、Task 6（部署，GATE）、Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -733,3 +733,12 @@
 - 用户选择本地合并：`p4-quick` fast-forward 到 `main`，合并后离线测试全部通过，`p4-quick` 分支已删除；`quick/P4-handoff.md` 按用户选择提交（`e1d20ed`）。
 - 推送前检查：仓库可见性 PRIVATE；check-secrets OK；`origin/main..main` 新增行里已知 IP 命中 0；其余 IPv4 都是 TEST-NET / `127.0.0.1`，另有 1 个计划测试代码断言里的 `10.x` 示例地址；URL 主机名只有 AWS 公开服务域名。
 - 用户确认后推送：`origin/main` `b4cbbf2..0b41b98`（10 个提交）。本条记录提交在推送之后，留在本地。
+
+### 2026-09-29 P5 Task 1（T5.1）：skills 副本和 `check-secrets.sh` 的占位符
+
+- `scripts/build_skills.py`：从 apache/doris-skills `0476f3b`（2026-09-14）的 git 对象生成 `quick/skills/` 的 4 个副本和 `LICENSE.txt`、`CLI-CONTRACT.md`、`UPSTREAM.md`，共 119 个文件、566278 字节，整棵树 sha256 `db3ca57c…`。`doris-repo-review` 不导入。
+- 改动全部是常量：14 个 `SKILL.md` 的提示行；2 个 description 缩写（1328 → 975、1307 → 978，触发词全部保留）；1 处链接修正（`03-case-index.md` → `03-cir-case-index.md`，3 次）；4 个允许的断链（示例路径）；可执行位不保留。upstream 新增或删除内容、常量过期，构建都会停下来。
+- `check-secrets.sh` 的 secret-key 规则不再把占位符（`<…>`、`${…}`、`...`、空值）当成泄漏，真实形状的值仍然命中；`doris-debug/data-lake/SKILL.md` 的 S3 示例因此不会让提交失败。
+- RED：`scripts/test`、`quick/test` 各 1 个 `ERROR`（`build_skills` 还不存在）；`test-check-secrets.sh` 5 个 `FAIL`（占位符被当成泄漏），真实值的 3 项已经通过。
+- GREEN：`scripts/test` 113、`quick/test` 25（2 个 adapter 检查 skip，Task 2 去掉）、`doris/test` 161、`test_agentcore_*.py` 89、6 组 shell 全部通过（check-secrets 20 个）；突变 sk 34/34、st 11/11 被抓到，工作区恢复原样，`--check` 仍然一致。
+- 执行方式 Subagent-driven：implementer（Opus 5.5）跑 Step 2–5，reviewer（Opus 5.5）评审通过（0 Critical / 0 Important，7 个 Minor 留给 Task 7 Step 2 的整体评审分类）；计划日志原文的 upstream 日期（2026-09-23）按实测改为 2026-09-14。

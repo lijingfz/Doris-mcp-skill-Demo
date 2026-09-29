@@ -91,7 +91,7 @@ GATE 3 个：Task 6 重新部署 Runtime；Task 8 重跑 `infra/30-gateway.sh`�
 
 | ✓ | ID | 标签 | 任务 | 需求 | 计划 |
 |---|---|---|---|---|---|
-| [ ] | T5.1 | [AI] | 锁定 apache/doris-skills commit `0476f3b`；`scripts/build_skills.py` 从 git 对象生成 4 个副本到 `quick/skills/`（每个 SKILL.md 正文第一行是 adapter 提示；超过 1024 字符的 2 个 description 换成缩写版；修 1 处断链；`UPSTREAM.md` 由同一组常量生成；`--check` 只比较）；`check-secrets.sh` 不再把 Doris 文档 S3 示例里 `aws_secret_access_key` 后面的占位符（`<…>`、`${…}`、`...`、空值）当成泄漏 | R-50 | P5 Task 1 |
+| [x] | T5.1 | [AI] | 锁定 apache/doris-skills commit `0476f3b`；`scripts/build_skills.py` 从 git 对象生成 4 个副本到 `quick/skills/`（每个 SKILL.md 正文第一行是 adapter 提示；超过 1024 字符的 2 个 description 换成缩写版；修 1 处断链；`UPSTREAM.md` 由同一组常量生成；`--check` 只比较）；`check-secrets.sh` 不再把 Doris 文档 S3 示例里 `aws_secret_access_key` 后面的占位符（`<…>`、`${…}`、`...`、空值）当成泄漏 | R-50 | P5 Task 1 |
 | [ ] | T5.2 | [AI] | 编写 `quick/skills/doris-mcp-adapter/SKILL.md`（翻译表：doriscli 命令、会话变量、SQL、FE / BE HTTP 调用；工具名前缀；带 profile 执行的约定；只读边界；60 s 限制），19 个检查；指令加第 5 条（诊断类问题先加载 adapter）、可用的时间粒度、「同期同天数」、不要用 OR 连接时间范围；对账加 `yoy_same_days_2026_09`（12 个）| R-50, R-51 | P5 Task 2 |
 | [ ] | T5.3 | [USER] | 桌面版导入 5 个 skill（adapter 先导入，`doris-debug` 整个文件夹一次导入），更新两个 agent，按 D7 设置权限；验证 adapter 能被自动选中（A5）；弹出登录页时再看一次 scope（M-1 情况 c）| R-50 | P5 Task 7 |
 | [ ] | T5.4 | [USER] | 完整彩排 × 2（design §10，7 个问题）。每轮前 AI 跑 `demo-check pre`，每轮后跑 `demo-check post`（审计、每分钟的 Gateway 耗时、连接数）并核对答案；D7：`execute_query` 为 Always Allow | R-51 | P5 Task 7 |
