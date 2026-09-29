@@ -16,7 +16,7 @@
 | P-04 | `src/server.py` | `create_server(service_credentials=, workspace_dir=)`: no MCP auth, one service-account pool |
 | P-05 | `src/tools/profile.py` (new) | `list_recent_queries`, `get_query_profile` |
 | P-06 | `config/mcp-server.toml` (new) | runtime limits (50 s SQL timeout, pool 5, 2000 rows) |
-| P-07 | `pyproject.toml` (new) | dependencies pinned to upstream `uv.lock` + boto3 (+ 2 transitive pins that keep the CodeZip equal to the tested `.venv`), for AgentCore CodeZip |
+| P-07 | `pyproject.toml` (new) | dependencies pinned to upstream `uv.lock` + boto3 (+ 5 transitive pins that keep the CodeZip equal to the tested `.venv`), for AgentCore CodeZip |
 | P-08 | `test/test_agentcore_*.py` (new) | tests for P-01..P-06, P-10 (`test_agentcore_audit_errors.py`) and P-11 (`test_agentcore_time_constraints.py`) |
 | P-09 | `src/config/loader.py`, `src/core/connection.py`, `config/mcp-server.toml`, `test/test_agentcore_session_timeout.py` (new) | `SET wait_timeout` on every pool connection (`session_wait_timeout_seconds = 600`), so Doris reaps what a torn-down Runtime microVM left open |
 | P-10 | `src/server.py` | the audit record of a failed `execute_query` / `query_metric` carries `error` (`CODE: message`, 300 chars, masked); `query_metric` takes success from the parsed result, logs the resolved `where` plus `having`, `order_by`, `limit`, and its `mf_command` gains `--where`/`--order-by`/`--limit`/`--having` (values masked before quoting) |
