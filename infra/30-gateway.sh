@@ -5,7 +5,11 @@
 #   * Gateway doris-mcp-gw: MCP, CUSTOM_JWT (Cognito discovery URL, clients A+B, scope doris-mcp/invoke)
 #   * Target doris: mcpServer endpoint = Runtime invoke URL, outbound GATEWAY_IAM_ROLE SigV4
 # Env knobs:  GW_ALLOWED_SCOPES="doris-mcp/invoke" (set to "" to drop the scope check)
+#             GW_EXCEPTION_LEVEL=DEBUG (default: the MCP client sees the detailed error messages;
+#               set to "" for generic ones; any other value is refused)
 #             SYNC=1  → synchronize-gateway-targets (after the Runtime's tools changed)
+# update-gateway replaces the whole Gateway config (omitted options are cleared), so create and update
+# share one argument list, description included: re-running with the default keeps DEBUG.
 # Dry-run by default. APPLY=1 to execute. Safe to re-run (re-applies role policy + authorizer).
 source "$(dirname "$0")/lib.sh"
 
@@ -13,6 +17,12 @@ ROLE_NAME=doris-mcp-gateway-role
 GW_NAME=doris-mcp-gw
 TARGET_NAME=doris
 GW_ALLOWED_SCOPES="${GW_ALLOWED_SCOPES-doris-mcp/invoke}"
+GW_EXCEPTION_LEVEL="${GW_EXCEPTION_LEVEL-DEBUG}"
+case "$GW_EXCEPTION_LEVEL" in
+  DEBUG) GW_EXCEPTION_ARGS=(--exception-level DEBUG) ;;
+  "")    GW_EXCEPTION_ARGS=() ;;
+  *)     log "FATAL: GW_EXCEPTION_LEVEL must be DEBUG or empty, not '$GW_EXCEPTION_LEVEL'"; exit 1 ;;
+esac
 
 if [[ "$APPLY" == "1" ]]; then
   : "${RUNTIME_ARN:?RUNTIME_ARN missing in state.env - finish T0.4 first}"
@@ -61,17 +71,17 @@ print(json.dumps({"customJWTAuthorizer": cfg}))
 PY
 )"
 GW_COMMON=(--name "$GW_NAME" --role-arn "$GW_ROLE_ARN" --protocol-type MCP
-  --authorizer-type CUSTOM_JWT --authorizer-configuration "$AUTHZ" --exception-level DEBUG)
+  --authorizer-type CUSTOM_JWT --authorizer-configuration "$AUTHZ" "${GW_EXCEPTION_ARGS[@]}"
+  --description "Quick desktop -> Doris MCP (Runtime dorismcp)")
 
 GW_ID="$(none_to_empty "$(aws bedrock-agentcore-control list-gateways \
   --query "items[?name=='$GW_NAME'].gatewayId | [0]" --output text)")"
 if [[ -z "$GW_ID" ]]; then
-  GW_ID="$(run aws bedrock-agentcore-control create-gateway "${GW_COMMON[@]}" \
-    --description "Quick desktop -> Doris MCP (Runtime dorismcp)" --tags "Project=$PROJECT_TAG" \
+  GW_ID="$(run aws bedrock-agentcore-control create-gateway "${GW_COMMON[@]}" --tags "Project=$PROJECT_TAG" \
     --query gatewayId --output text)"
   GW_ID="${GW_ID:-$(placeholder gateway-id)}"
 else
-  log "gateway exists: $GW_ID (re-applying authorizer, scopes='$GW_ALLOWED_SCOPES')"
+  log "gateway exists: $GW_ID (re-applying authorizer, scopes='$GW_ALLOWED_SCOPES', exception level='$GW_EXCEPTION_LEVEL')"
   run aws bedrock-agentcore-control update-gateway --gateway-identifier "$GW_ID" "${GW_COMMON[@]}" \
     --query status --output text >/dev/null
 fi

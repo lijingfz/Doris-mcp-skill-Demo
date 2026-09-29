@@ -36,19 +36,33 @@ fi
 
 # 1b) Passwords held only in Secrets Manager (created by infra/*.sh, always in us-east-1). The value
 #     stays in a shell variable and reaches grep through a process substitution — never argv, never printed.
+#     A secret that infra/99-cleanup.sh deleted has nothing left to compare and is skipped: Secrets Manager
+#     says it is marked for deletion (the recovery window), or not found while the caller is the account in
+#     infra/state.env (with another account's credentials every secret is "not found"). Any other error fails.
+SM_REGION="${SM_REGION:-us-east-1}"
+project_account="$(sed -n 's/^ACCOUNT_ID=\([0-9]\{12\}\)$/\1/p' infra/state.env 2>/dev/null || true)"
+sm_err="$(mktemp)"; trap 'rm -f "$sm_err"' EXIT
+skipped=0
 for sid in ${SM_SECRETS:-doris-mcp/mcp_svc doris-mcp/cognito-demo-user}; do
-  if ! pw="$(aws secretsmanager get-secret-value --region "${SM_REGION:-us-east-1}" --secret-id "$sid" \
-               --query SecretString --output text 2>/dev/null |
-             python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])' 2>/dev/null)" || [[ ${#pw} -lt 4 ]]; then
+  if pw="$(aws secretsmanager get-secret-value --region "$SM_REGION" --secret-id "$sid" \
+             --query SecretString --output text 2>"$sm_err" |
+           python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])' 2>/dev/null)" && [[ ${#pw} -ge 4 ]]; then
+    while IFS= read -r f; do
+      echo "LEAK: password of secret $sid found in $f"
+      fail=1
+    done < <(grep -lIF -f <(printf '%s\n' "$pw") -- "${files[@]}" 2>/dev/null)
+  elif grep -q 'marked for deletion' "$sm_err"; then
+    echo "SKIP: secret $sid is scheduled for deletion (infra/99-cleanup.sh) — nothing left to compare"
+    skipped=$((skipped + 1))
+  elif grep -q '(ResourceNotFoundException)' "$sm_err" && [[ -n "$project_account" ]] &&
+       [[ "$(aws sts get-caller-identity --region "$SM_REGION" --query Account --output text 2>/dev/null)" == "$project_account" ]]; then
+    echo "SKIP: secret $sid no longer exists in the project's account (deleted) — nothing left to compare"
+    skipped=$((skipped + 1))
+  else
     # A check that could not run is not a pass: fix the AWS credentials, then re-run.
     echo "FAIL: cannot read secret $sid — its exact-value check did not run"
     fail=1
-    continue
   fi
-  while IFS= read -r f; do
-    echo "LEAK: password of secret $sid found in $f"
-    fail=1
-  done < <(grep -lIF -f <(printf '%s\n' "$pw") -- "${files[@]}" 2>/dev/null)
 done
 unset pw
 
@@ -67,4 +81,8 @@ if [[ $fail -ne 0 ]]; then
   echo "check-secrets: FAILED — do not commit"
   exit 1
 fi
-echo "check-secrets: OK (${#files[@]} files scanned)"
+if [[ $skipped -gt 0 ]]; then
+  echo "check-secrets: OK (${#files[@]} files scanned, $skipped deleted secrets skipped)"
+else
+  echo "check-secrets: OK (${#files[@]} files scanned)"
+fi

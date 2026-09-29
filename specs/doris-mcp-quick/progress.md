@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 4（T5.7b 的 3 个脚本）已完成（M-7 在 Task 7 写进 runbook 后勾选 T5.7b）；Task 5（demo-check / cleanup / 30-gateway）从 Step 1 开始
-- **下一步**：Task 5（demo-check / cleanup 脚本），然后 Task 6（部署，GATE）、Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
+- **进行中**：Task 5（demo-check / cleanup / 30-gateway 脚本）已完成；Task 6（部署 P-10、P-11，GATE）从 Step 1 开始
+- **下一步**：Task 6（锁 3 个传递依赖，部署，GATE），然后 Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -769,3 +769,14 @@
 - RED：25 个 `ERROR`（没有 `--failures`、`_minute`、`hidden_values`）、7 个 `FAIL`（`Average`、序列没合并、stdio 没 mask），其余 112 个通过。
 - GREEN：`scripts/test` 137、`quick/test` 56（Task 2 加了 6 个）、`doris/test` 168；突变 af 13/13、m8 6/6、m9 16/16 被抓到。
 - 评审：与计划 diff 逐字节一致，无 Critical / Important；9 个 Minor（纵深防御和边界输入，都不在 P5 的调用路径上）留给 Task 7 Step 2 的整体评审。
+
+### 2026-09-29 P5 Task 5：`demo-check.sh`、`99-cleanup.sh`、`30-gateway.sh` 的开关、`check-secrets.sh` 跳过已删除的 secret
+
+- `infra/30-gateway.sh`：create 和 update 共用一组参数（`update-gateway` 会清空没传的选项，P3 同步 target 时重跑之后 description 变成了 `None`），description 放进去；`GW_EXCEPTION_LEVEL` 开关（默认 `DEBUG`，`""` 不传，其他值拒绝）。没有执行，Task 8 决定。
+- `infra/99-cleanup.sh`：按依赖顺序删除本项目的 AWS 资源（target → Gateway → stack → endpoint → Cognito domain → pool → secret → `doris-demo-sg` 里引用 `doris-mcp-rt` 的规则 → 等 ENI 释放 → 两个 SG → IAM 角色）；第一次删除前检查账号、标签、Gateway 名字，只认 NOT_FOUND 为「已删除」，其他错误 FATAL、什么都不删；可重跑。对真实账号 dry-run：检查全部通过，18 条删除命令。
+- `scripts/demo-check.sh`：`pre` 10 项、`post` 5 项；token 不 export、不上命令行、不打印；只有对账拿到只读账号的变量；耗时窗口 `--since` 向下取整、`--until` 向上取整。对真实账号：pre 10/10、post 5/5（旧 server：失败的调用显示 `(not recorded)`）。
+- `scripts/check-secrets.sh`：Task 9 删掉的 secret 跳过（排期删除，或者在 `state.env` 的账号里已不存在），OK 行写明跳过了几个；过期、没有权限、别的账号、没有 `state.env` 仍然失败。否则清理之后每次提交都过不了检查。
+- 未解决的 Minor：`TOKEN_CMD` 的默认值不看 `STATE_FILE`；`99-cleanup.sh` 的少数「已经不存在」分支只在离线测试里走过。
+- RED：`test-30-gateway.sh` 19 个、`test-99-cleanup.sh` 60 个、`test-demo-check.sh` 78 个、`test-check-secrets.sh` 7 个 `FAIL`（update 没带 description、没有 `GW_EXCEPTION_LEVEL`，两个脚本不存在，删掉的 secret 不跳过）。
+- GREEN：`test-30-gateway.sh` 30、`test-99-cleanup.sh` 81、`test-demo-check.sh` 96、`test-check-secrets.sh` 36 个检查，原有另外 5 组 shell 测试和 `scripts/test` 137 通过；突变 gw 11/11、cl 22/22、dc 21/21、cs 9/9 被抓到。
+- 评审：8 个文件与计划逐字节一致，无 Critical / Important；逐个拒绝读操作的对抗测试都是 FATAL、0 次写。10 个 Minor 里 4 个记入 Task 8 的决策表：`check-secrets` 的「排期删除」分支不核对账号；`SM_REGION` 写错时 NotFound 也会跳过；`--until` 落在整分钟第 0 秒时最后一分钟被漏掉；`bash -x` 会打印 token 和密码。其余 6 个留给 Task 7 Step 2 的整体评审。
