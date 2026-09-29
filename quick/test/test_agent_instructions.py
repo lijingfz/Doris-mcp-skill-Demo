@@ -109,6 +109,16 @@ class Rules(unittest.TestCase):
         for term in ("一次调用只写一个时间范围", "OR"):
             self.assertIn(term, framing)
 
+    def test_time_is_filtered_on_metric_time_not_order_date(self):
+        # Only metric_time becomes MetricFlow's time constraint (P-11). A where on order_date, as in the query
+        # guide's examples, stays a plain WHERE that also filters the last-year branch, so gmv_last_year and
+        # gmv_yoy silently become 0, which the next rule would read as 无数据.
+        lines = [line for line in _section("演示口径").splitlines() if "order_date" in line]
+        self.assertEqual(len(lines), 1, lines)
+        for term in ("时间过滤只写在 metric_time 上", "不要写 order_date 或 order_entity__order_date",
+                     "gmv_last_year", "gmv_yoy", "过滤成 0"):
+            self.assertIn(term, lines[0])
+
     def test_diagnosis_uses_the_skills_through_the_adapter(self):
         rules = _section("硬约束")
         for term in ("doris-mcp-adapter", "doris-debug", "doris-profile-reader", "doris-best-practices",
