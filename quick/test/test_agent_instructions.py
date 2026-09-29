@@ -18,11 +18,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "doris"))
-from reconcile import MODELS_DIR, Case, DirectBackend, ReconcileError  # noqa: E402  (compiles like the server's query_metric)
+from reconcile import CASES, MODELS_DIR, Case, DirectBackend, ReconcileError  # noqa: E402  (compiles like the server's query_metric)
 
 INSTRUCTIONS = ROOT / "quick" / "agent-instructions.md"
 QUICK_LIMIT = 50_000  # characters; design §4.4
 GATEWAY_PREFIX = "doris___"  # <target>___<tool>, design §4.5
+GRAINS = ("day", "week", "month", "quarter", "year")  # metric_time__<grain>; every one compiles (SemanticLayer)
 
 
 def _text() -> str:
@@ -93,6 +94,27 @@ class Rules(unittest.TestCase):
                      "metric_time BETWEEN '2026-01-01' AND '2026-09-25'"):
             self.assertIn(term, framing)
 
+    def test_every_time_grain_of_metric_time_is_named(self):
+        framing = _section("演示口径")
+        for grain in GRAINS:
+            self.assertIn(f"`metric_time__{grain}`", framing)
+
+    def test_filters_follow_the_grain_and_the_same_days_are_compared_by_day(self):
+        framing = _section("演示口径")
+        for term in ("对齐到分组粒度", "整月", "同期同天数", "group_by `metric_time__day`", "相加"):
+            self.assertIn(term, framing)
+
+    def test_one_time_range_per_call_and_no_or(self):
+        framing = _section("演示口径")
+        for term in ("一次调用只写一个时间范围", "OR"):
+            self.assertIn(term, framing)
+
+    def test_diagnosis_uses_the_skills_through_the_adapter(self):
+        rules = _section("硬约束")
+        for term in ("doris-mcp-adapter", "doris-debug", "doris-profile-reader", "doris-best-practices",
+                     "doris-architecture-advisor", "doriscli"):
+            self.assertIn(term, rules)
+
     def test_ratios_are_fractions_and_a_zero_yoy_means_no_data(self):
         framing = _section("演示口径")
         for term in ("mini_program_share", "0~1", "无数据"):
@@ -126,6 +148,12 @@ class SemanticLayer(unittest.TestCase):
                 except ReconcileError as e:
                     self.fail(f"group_by {dimension}: {e}")
 
+    def test_the_same_days_comparison_is_a_reconcile_case(self):
+        # The same-days recipe in 演示口径 is checked against hand-written SQL on the cluster by reconcile.py.
+        case = next((c for c in CASES if c.name == "yoy_same_days_2026_09"), None)
+        self.assertIsNotNone(case)
+        self.assertEqual((case.metrics, case.group_by), (("gmv", "gmv_last_year"), ("metric_time__day",)))
+
 
 class Hygiene(unittest.TestCase):
     def test_every_tool_named_exists_behind_the_gateway(self):
@@ -140,6 +168,13 @@ class Hygiene(unittest.TestCase):
         bare = {c["tool"] for c in json.loads((ROOT / "scripts" / "smoke_calls.json").read_text(encoding="utf-8"))}
         text = re.sub(rf"\b{GATEWAY_PREFIX}\w+", "", _text())
         self.assertEqual({t for t in bare if re.search(rf"\b{t}\b", text)}, set())
+
+    def test_every_skill_named_is_in_quick_skills(self):
+        named = set(re.findall(r"\bdoris-[a-z]+(?:-[a-z]+)*", _text()))
+        self.assertTrue(named)
+        for name in sorted(named):
+            with self.subTest(skill=name):
+                self.assertTrue((ROOT / "quick" / "skills" / name / "SKILL.md").is_file())
 
     def test_no_urls_addresses_arns_or_account_ids(self):
         text = _text()

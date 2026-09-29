@@ -93,6 +93,17 @@ CASES: tuple[Case, ...] = (
         LEFT JOIN (SELECT MONTHS_ADD(DATE_TRUNC('month', order_date), 12) AS m, SUM(pay_amount) AS gmv
                    FROM ecom.v_paid_order WHERE order_date < '2026-01-01'
                    GROUP BY MONTHS_ADD(DATE_TRUNC('month', order_date), 12)) l ON l.m = t.m"""),
+    # The same days of last year: grouped by day the filter stays 09-01..09-24 (grouped by month it widens to the
+    # whole month, as in yoy_2026). Ends at 09-24 so the live orders of 09-25 cannot make the two sides differ.
+    Case("yoy_same_days_2026_09", ("gmv", "gmv_last_year"), ("metric_time__day",),
+         "metric_time BETWEEN '2026-09-01' AND '2026-09-24'", """
+        SELECT t.d AS metric_time__day, t.gmv AS gmv, l.gmv AS gmv_last_year
+        FROM (SELECT DATE_TRUNC('day', order_date) AS d, SUM(pay_amount) AS gmv
+              FROM ecom.v_paid_order WHERE order_date BETWEEN '2026-09-01' AND '2026-09-24'
+              GROUP BY DATE_TRUNC('day', order_date)) t
+        LEFT JOIN (SELECT DATE_ADD(DATE_TRUNC('day', order_date), INTERVAL 1 YEAR) AS d, SUM(pay_amount) AS gmv
+                   FROM ecom.v_paid_order WHERE order_date BETWEEN '2025-09-01' AND '2025-09-24'
+                   GROUP BY DATE_ADD(DATE_TRUNC('day', order_date), INTERVAL 1 YEAR)) l ON l.d = t.d"""),
     Case("channel_ytd", ("gmv", "order_count"), ("order_entity__channel",), YTD, f"""
         SELECT channel AS order_entity__channel, SUM(pay_amount) AS gmv, COUNT(DISTINCT order_id) AS order_count
         FROM ecom.v_paid_order WHERE order_date {YTD_SQL} GROUP BY channel"""),

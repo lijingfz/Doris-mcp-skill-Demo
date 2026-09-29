@@ -47,13 +47,6 @@ TRIGGERS = {
 }
 
 
-def _skip_until_the_adapter_lands(test: unittest.TestCase) -> None:
-    """TEMPORARY: quick/skills/doris-mcp-adapter/ is written by another P5 task. Delete this helper and its calls
-    once that folder is committed."""
-    if not (SKILLS_DIR / ADAPTER / "SKILL.md").is_file():
-        test.skipTest(f"quick/skills/{ADAPTER}/SKILL.md is not written yet")
-
-
 def _split(path: Path) -> tuple[dict, str]:
     """(frontmatter as parsed YAML, body) of a SKILL.md: the YAML between the first line `---` and the next."""
     text = path.read_text(encoding="utf-8")
@@ -75,7 +68,6 @@ class Layout(unittest.TestCase):
         self.assertEqual(_folders() - {ADAPTER}, set(build_skills.SKILLS))
 
     def test_exactly_the_five_skill_folders(self):
-        _skip_until_the_adapter_lands(self)
         self.assertEqual(_folders(), FOLDERS)
 
     def test_licence_contract_and_provenance(self):
@@ -103,7 +95,6 @@ class SkillFolders(unittest.TestCase):
                 self._check(folder)
 
     def test_the_adapter_has_a_skill_md_within_quicks_limits(self):
-        _skip_until_the_adapter_lands(self)
         self._check(ADAPTER)
 
 

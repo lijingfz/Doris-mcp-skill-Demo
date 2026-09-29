@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 1（T5.1）已完成；Task 2（T5.2）从 Step 1 开始
-- **下一步**：Task 2（T5.2 adapter + 指令），然后 Task 3（T5.7a 代码）、Task 4（T5.7b）、Task 5（demo-check / cleanup 脚本）、Task 6（部署，GATE）、Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
+- **进行中**：Task 2（T5.2）已完成；Task 3（T5.7a 代码：P-10、P-11）从 Step 1 开始
+- **下一步**：Task 3（T5.7a 代码），然后 Task 4（T5.7b）、Task 5（demo-check / cleanup 脚本）、Task 6（部署，GATE）、Task 7（整体评审，再交给用户导入 skill 和彩排 2 轮）、Task 8（T5.5）、Task 9（演示结束后清理，GATE）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -742,3 +742,12 @@
 - RED：`scripts/test`、`quick/test` 各 1 个 `ERROR`（`build_skills` 还不存在）；`test-check-secrets.sh` 5 个 `FAIL`（占位符被当成泄漏），真实值的 3 项已经通过。
 - GREEN：`scripts/test` 113、`quick/test` 25（2 个 adapter 检查 skip，Task 2 去掉）、`doris/test` 161、`test_agentcore_*.py` 89、6 组 shell 全部通过（check-secrets 20 个）；突变 sk 34/34、st 11/11 被抓到，工作区恢复原样，`--check` 仍然一致。
 - 执行方式 Subagent-driven：implementer（Opus 5.5）跑 Step 2–5，reviewer（Opus 5.5）评审通过（0 Critical / 0 Important，7 个 Minor 留给 Task 7 Step 2 的整体评审分类）；计划日志原文的 upstream 日期（2026-09-23）按实测改为 2026-09-14。
+
+### 2026-09-29 P5 Task 2（T5.2）：adapter skill、指令第 5 条和时间口径
+
+- `quick/skills/doris-mcp-adapter/SKILL.md`（133 行）：工具表、doriscli 命令翻译表（`CLI-CONTRACT.md` 的全部命令和 flag，加上副本正文用到的命令；`SET` → `SET_VAR` 提示；`tablet` → 4 条表级语句；副本用到的每个 FE HTTP 路径）、带 profile 执行的 4 步、能用和被拒绝的 SQL、写操作交给人、60 s 限制、先有证据。25 个检查从 `CLI-CONTRACT.md`、副本正文和 server 源码（工具注册、`check_service_health`、`max_rows`）取对照。
+- `quick/agent-instructions.md`：第 5 条（诊断类问题按 4 个 doris-* skill 的方法做，先加载 adapter）；演示口径加「时间过滤对齐到分组粒度」「同期同天数按天分组再相加」「5 个时间粒度」「一次调用一个时间范围，不用 OR」。P4 的「日期过滤假设」由此收口：按月分组取整月是 MetricFlow 的设计，不改 server。
+- `doris/reconcile.py` 加 `yoy_same_days_2026_09`（按天分组的 `gmv` + `gmv_last_year`，9 月 1–24 日），经已部署的 Runtime 在线对账 12/12。
+- RED：20 个 `ERROR`（adapter 的 `SKILL.md` 还不存在）、7 个 `FAIL`（4 个 skill 目录，指令没有第 5 条和时间粒度口径，对账没有 `yoy_same_days_2026_09`）。
+- 按 Subagent-driven 执行（implementer / reviewer 都是 Opus 5.5）。任务评审发现计划原文的 adapter 有 2 处会误导 agent，偏离计划内嵌的原文修正（只加行和句子，计划的突变 ad1–ad14 照常适用）：副本用到的 FE 路径 `/api/query_profile`、`/api/health`、`/api/bootstrap`、`/api/tablets_distribution` 原来落到「问人」，现在各有一行；`SHOW PROCESSLIST` 只看得到服务账号自己的会话，空结果不能当作「没有在跑的查询」。顺带：`check_service_health` 不返回 Doris 版本（改用 `SHOW VARIABLES LIKE 'version_comment'`）、`describe_table` 参数顺序、`max_rows` 不降低查询代价、找不到 profile 时再列一次就停、tablet 副本状态取不到。复审通过。
+- GREEN：`quick/test` 56（原计划 50，多出 adapter 的 6 个检查；后面任务里 `quick/test` 的期望数相应 +6）、`doris/test` 161、`scripts/test` 113；突变 ad 14/14、ai 7/7，修正新增的 14 个突变也全部被抓到。
