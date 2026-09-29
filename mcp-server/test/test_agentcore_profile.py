@@ -195,11 +195,27 @@ class TestListRecentQueries(unittest.IsolatedAsyncioTestCase):
 
 class TestGetQueryProfile(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_query_ids_make_no_request(self):
-        for qid in ("", "abc", "../../api/x", QID + "/../x", "0123456789abcdeg-fedcba9876543210"):
+        for qid in ("", "abc", "../../api/x", QID + "/../x", "0123456789abcdeg-fedcba9876543210",
+                    "0123456789abcdef0-1", "1-0123456789abcdef0", "-1", "1-", "-", "1-2-3",
+                    "g-1", "1-g", "1 -2", "1/-2", "1-/2"):
             fe = FakeFe()
             body = _body(await get_query_profile(TARGET, qid, transport=fe.transport()))
             self.assertEqual(body["error"]["code"], "INVALID_PARAMS", qid)
             self.assertEqual(fe.requests, [])
+
+    async def test_unpadded_query_ids_reach_the_fe(self):
+        # Doris prints each half with Long.toHexString, so a leading zero nibble is dropped.
+        for raw, qid in (("4f3c29918764dfc-b03a971ce0467326", "4f3c29918764dfc-b03a971ce0467326"),
+                         ("b03a971ce0467326-4f3c29918764dfc", "b03a971ce0467326-4f3c29918764dfc"),
+                         ("0-1", "0-1"),
+                         ("A-B", "a-b")):
+            with self.subTest(query_id=raw):
+                fe = FakeFe(api_text=lambda q: httpx.Response(200, text=PROFILE))
+                body = _body(await get_query_profile(TARGET, raw, transport=fe.transport()))
+                self.assertTrue(body.get("success"), body)
+                self.assertEqual((body["data"]["query_id"], body["data"]["source"]), (qid, "api_text"))
+                self.assertEqual(fe.paths(), [f"/rest/v2/manager/query/profile/text/{qid}", "/api/profile/text"])
+                self.assertEqual(fe.requests[1].url.params["query_id"], qid)
 
     async def test_invalid_mode_and_max_chars(self):
         fe = FakeFe()

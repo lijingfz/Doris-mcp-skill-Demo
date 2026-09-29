@@ -35,7 +35,8 @@ _LIST_PATH = "/rest/v1/query_profile"
 _V2_TEXT_PATH = "/rest/v2/manager/query/profile/text/{query_id}"
 _API_TEXT_PATH = "/api/profile/text"
 
-_QUERY_ID_RE = re.compile(r"^[0-9a-f]{16}-[0-9a-f]{16}$")
+# Doris prints each half of a query id unpadded (Long.toHexString), so 1-16 hex digits.
+_QUERY_ID_RE = re.compile(r"^[0-9a-f]{1,16}-[0-9a-f]{1,16}$")
 _SECTION_RE = re.compile(r"^([A-Za-z][A-Za-z ]*)(\([^)]*\))?:\s*$")
 _COUNTER_RE = re.compile(r"^\s*- [^:]+: (.*)$")
 _ZERO_VALUE_RE = re.compile(
@@ -275,7 +276,8 @@ async def get_query_profile(
     if not _QUERY_ID_RE.match(qid):
         return error_response(
             ErrorCode.INVALID_PARAMS,
-            "query_id must look like 0123456789abcdef-0123456789abcdef (take it from list_recent_queries)",
+            "query_id must be two hex parts joined by '-', as list_recent_queries returns it "
+            "(e.g. 4f3c29918764dfc-b03a971ce0467326)",
         )
     if mode not in ("summary", "full"):
         return error_response(ErrorCode.INVALID_PARAMS, "mode must be 'summary' or 'full'")

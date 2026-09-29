@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 7 Step 2（整体评审）已完成；Step 3（用户导入 skills）从头开始
-- **下一步**：Task 7 Step 2（整体评审，opus），然后 Step 3（用户导入 skills，模板 1）、Step 4（彩排 2 轮，模板 2）；Task 8（T5.5）、Task 9（演示结束后清理，GATE）
+- **进行中**：修 get_query_profile 的 query_id 校验（Doris 的 id 每段不补零，1–16 位），TDD 后按 Task 6 Step 3–6 部署 Runtime version 4（GATE），然后重跑 pre、交 Part A
+- **下一步**：部署 Runtime version 4（query_id 校验修复）等待用户确认（GATE）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -810,3 +810,12 @@
   - adapter 的 `profile list --limit N` 没写 1–100 的范围。
   - 手册没说清理后 CDKToolkit 栈和它的 bucket 会保留。
   - 前面任务留下的：check-secrets 的两个跳过分支（账号、错误类型、区域）、`minute_ceil` 截掉毫秒、`bash -x` 会打印 token 和密码、`!IsEgress` 没有测试、Gateway 有第二个 target 时中途失败、VPC endpoint 删除失败要等 300 s 才报、`TOKEN_CMD` 默认值不看 `STATE_FILE`；Task 3、4 的边界情况（mask 只认 IPv4、where/having 不截断、stdio 的 URL 形式等）不在演示路径上，列入后续清单。
+
+### 2026-09-29 T5.3 预检发现 query_id 校验 bug（修复，待部署 version 4）
+
+- `demo-check pre` 两次都是 9/10，都失败在 `flow`，原因不同：
+  - 第 1 次：`get_query_profile` 拒绝了真实的 query_id（第一段只有 15 位）。Doris 输出 query_id 时每段不补零（`Long.toHexString`），每段 1–16 位；`profile.py` 的 `_QUERY_ID_RE` 从 P-05 起要求每段正好 16 位，约 1/8 的真实 id 会被当成 INVALID_PARAMS。main 上也有这个问题。
+  - 第 2 次：Gateway 指标里有一次 `list_recent_queries` 用了 30842 ms（UserErrors=1），Runtime 日志里没有这次调用；前后的调用都是新 microVM 冷启动，5–7 s，和 P4 相同。这是平台的偶发抖动，一次就用完了 `flow` 15 s 的轮询预算，不修（记入 Task 8）。
+- 修复（TDD，Opus implementer + Opus reviewer 通过）：`_QUERY_ID_RE` 改为每段 1–16 位十六进制（仍只允许 `[0-9a-f-]`，路径安全不变），INVALID_PARAMS 的提示改成真实格式；`test_agentcore_profile.py` 新增短段 id 经 fake FE 两条路径都带上规范化 id 的测试，并补了 17 位、空段、三段、非 hex、空白和斜杠的拒绝用例。test_agentcore 153 → 154，upstream 离线、scripts 137、doris 168、quick 67 都通过。
+- 部署前只读核对：工具定义变化 0；CDK diff 只有 Runtime 的 CodeZip S3 路径（与 Task 6 Step 3 相同的 12 行）；CodeZip 88 个 dist 与 `.venv` 0 个不同；staging 里的 `profile.py` 与工作区一致。
+- 下一步：GATE——部署 Runtime version 4，然后重跑 `demo-check pre`，再交 Part A。
