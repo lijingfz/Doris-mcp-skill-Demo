@@ -59,6 +59,17 @@ class Rules(unittest.TestCase):
         for term in ("Doris 专家", "ecom"):
             self.assertIn(term, role)
 
+    def test_answers_follow_the_language_of_the_question(self):
+        # The demo has English-speaking listeners: an English question gets an English answer. Every text value in
+        # ecom (names, regions, carriers, promotions, review text) is Chinese, so filters and full-text searches keep
+        # the Chinese terms of the data, looked up first when the exact wording is not known.
+        role = _section("角色")
+        for term in ("提问的语言", "中文提问用中文", "英文提问用英文", "先给结论",
+                     "文本值", "物流公司", "活动名", "评价内容", "都是中文",
+                     "全文检索", "照数据原文用中文词", "先查出原值再过滤", "保留中文原名", "英文说明"):
+            self.assertIn(term, role)
+        self.assertNotIn("用中文回答", role)
+
     def test_answers_rest_on_tool_results(self):
         rules = _section("硬约束")
         for term in ("证据", f"{GATEWAY_PREFIX}check_service_health", f"{GATEWAY_PREFIX}list_metrics",

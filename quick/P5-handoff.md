@@ -6,7 +6,7 @@
 
 - **已完成（AI 侧）**：
   - `quick/skills/` 里有 5 个 skill：自写的 `doris-mcp-adapter`，以及从 apache/doris-skills 锁定 commit 生成的 4 个副本（`UPSTREAM.md` 记录了来源和改动）。
-  - `quick/agent-instructions.md` 更新了：诊断类问题先加载 adapter；时间粒度；「同期同天数」怎么比；不要用 OR 连接几个时间范围；时间只按 `metric_time` 过滤（不用 `order_date`）。
+  - `quick/agent-instructions.md` 更新了：诊断类问题先加载 adapter；时间粒度；「同期同天数」怎么比；不要用 OR 连接几个时间范围；时间只按 `metric_time` 过滤（不用 `order_date`）；回答跟随提问的语言（中文问中文答，英文问英文答）。
   - Runtime 已重新部署：审计日志会记下失败的原因和 `query_metric` 的过滤条件；`metric_time` 的过滤条件修好了（按天的范围、`>` / `<`、多个条件取交集；用 OR 连接会报错并提示改法）。
   - 整体评审（opus）的结果和处理见 `specs/doris-mcp-quick/progress.md` 的最新一条日志。
 - **每一轮开始前**：你说「开始第 N 轮」，AI 跑 `demo-check pre`（约 1.5 分钟），把结果和开始时间（UTC）告诉你，再回复「可以开始」。

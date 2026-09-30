@@ -1,6 +1,7 @@
 # P5：导入 skills + 两轮完整彩排（T5.3 + T5.4）
 
 > 本文件不包含任何 URL、secret 或 token。连接参数（MCP URL、Token URL、Authorize URL、client ID）见 `quick/T0.7-guide.md` 的「连接参数」。如果 Quick 要求重新登录，或者要求重新填 client secret / `demo` 用户的密码，按 T0.7 的「Step 2：取 secret」在**你自己的终端**里获取，不要用 Claude Code 的 `!` 前缀。
+> English version: `quick/P5-guide.en.md`
 
 ## 注意
 
@@ -44,7 +45,7 @@ scp -r <开发机>:/home/ubuntu/AI-code/Doris-mcp-skill-Demo/quick/skills ./dori
 ### A2 更新 agent
 
 1. 打开 agent「Doris 专家」的编辑页。
-2. 指令：删掉原来的全文，粘贴仓库里 `quick/agent-instructions.md` 的新全文（约 2700 字符；可以在你自己的终端里 `cat quick/agent-instructions.md` 后复制，这个文件里没有 secret）。新版比 P4 多了几条：诊断类问题先加载 doris-mcp-adapter；可用的时间粒度；「同期同天数」怎么比；不要用 OR 连接几个时间范围；时间只按 metric_time 过滤（不用 order_date）。如果 Quick 提示指令太长，记下提示原文。
+2. 指令：删掉原来的全文，粘贴仓库里 `quick/agent-instructions.md` 的新全文（约 2900 字符；可以在你自己的终端里 `cat quick/agent-instructions.md` 后复制，这个文件里没有 secret）。新版比 P4 多了几条：诊断类问题先加载 doris-mcp-adapter；可用的时间粒度；「同期同天数」怎么比；不要用 OR 连接几个时间范围；时间只按 metric_time 过滤（不用 order_date）；回答跟随提问的语言（中文问中文答，英文问英文答）。如果 Quick 提示指令太长，记下提示原文。
 3. skills：挂上 A1 的 5 个 skill。如果 agent 的编辑页里没有选择 skill 的地方（skills 对所有 agent 生效），记「skills 是全局的」。
 4. 连接器：只关联 `Doris-Desktop-MCP`，不变。
 5. 备份 agent「Doris 专家（svc）」（关联 `doris-mcp-svc`）：同样替换指令、挂上 skills。再看一眼 `doris-mcp-svc` 在桌面版里显示几个 `doris___` 工具，记下数量；不是 12 个也不用修（P4 里桌面版的旧连接器刷新不了，备份走网页版）。
