@@ -63,12 +63,15 @@ PREPARATION = {GUIDE: "准备", GUIDE_EN: "Preparation"}
 TEMPLATES = {GUIDE: "回复模板", GUIDE_EN: "Reply templates"}
 DEMO_FLOW = {RUNBOOK: "演示流程", RUNBOOK_EN: "Demo flow"}
 TROUBLE = {RUNBOOK: "出问题时", RUNBOOK_EN: "If something goes wrong"}
+AFTER = {RUNBOOK: "演示后", RUNBOOK_EN: "After the demo"}
+ENGLISH = {GUIDE: GUIDE_EN, RUNBOOK: RUNBOOK_EN}
 FIXED_STRINGS = (  # the other strings the presenter copies: the English verbatim, its Chinese original, and where
     ("Are there any slow queries running on the cluster right now?", "现在集群上有没有正在运行的慢查询？",
      {GUIDE: (PART_A[GUIDE], "A5 "), GUIDE_EN: (PART_A[GUIDE_EN], "A5 ")}),
     ("Write your own query that counts daily UV on ecom.fact_user_event and run it with profile",
      "你自己写一条按天统计 ecom.fact_user_event UV 的查询，带 profile 执行",
-     {GUIDE: (PART_B[GUIDE], "步骤 5"), GUIDE_EN: (PART_B[GUIDE_EN], "Step 5 ")}),
+     {GUIDE: (PART_B[GUIDE], "步骤 5"), GUIDE_EN: (PART_B[GUIDE_EN], "Step 5 "),
+      RUNBOOK: (TROUBLE[RUNBOOK],), RUNBOOK_EN: (TROUBLE[RUNBOOK_EN],)}),
     ("There is no command line here. Use only the Doris MCP tools, following the doris-mcp-adapter mapping table",
      "这里没有命令行，只能用 Doris MCP 工具，按 doris-mcp-adapter 的对照表来",
      {RUNBOOK: (TROUBLE[RUNBOOK],), RUNBOOK_EN: (TROUBLE[RUNBOOK_EN],)}),
@@ -87,6 +90,7 @@ REFERENCE_TABLES = (  # the start of the header line in the Chinese guide and in
 # the templates already pin.
 VALUE = re.compile(r"[+-]?\d[\d,]*\.\d+%?|[+-]?\d+(?:\.\d+)?%|\d{4}-\d{2}-\d{2}|\d{1,3}(?:,\d{3})+|\d+–\d+"
                    r"|\d+ → \d+|\d+ (?:ms|days|months)(?![A-Za-z])|BUCKETS \d+|(?<!\d)\d{2,}(?!\d)")
+CHINESE_CODE = re.compile(r"`[^`\n]*[\u4e00-\u9fff][^`\n]*`")  # a backticked span with Chinese in it
 
 
 def _text(path: Path) -> str:
@@ -145,6 +149,12 @@ def _values(text: str) -> Counter:
     return Counter(VALUE.findall(text))
 
 
+def _without_chinese_code(text: str) -> str:
+    """An English text without its backticked Chinese spans: the Chinese originals of the questions it quotes
+    next to the English ones would otherwise count the values of a question twice."""
+    return CHINESE_CODE.sub("", text)
+
+
 def _value_parts(section: str) -> list[str]:
     """The parts of a section whose values must match part for part: the text before the first ### heading and each
     ### subsection; in a section without subsections, the text outside the table and each table line."""
@@ -164,6 +174,14 @@ def _part(path: Path, title: str, heading: str | None = None) -> str:
     if match is None:
         raise AssertionError(f"{path.name}: no '### {heading}…' in '## {title}'")
     return match.group(1)
+
+
+def _one_line(text: str, key: str, strip_backticks: bool = False) -> str:
+    """The one line of `text` that holds `key`, without its backticks if asked; fails on no line or several."""
+    lines = [line for line in text.splitlines() if key in line]
+    if len(lines) != 1:
+        raise AssertionError(f"{len(lines)} lines hold {key!r}: {lines}")
+    return lines[0].replace("`", "") if strip_backticks else lines[0]
 
 
 def _scripts(path: Path) -> list[str]:
@@ -238,21 +256,23 @@ class Questions(unittest.TestCase):
         for path, path_en, sections in ((GUIDE, GUIDE_EN, PART_B), (RUNBOOK, RUNBOOK_EN, DEMO_FLOW)):
             parts = _value_parts(_section(path, sections[path]))
             parts_en = _value_parts(_section(path_en, sections[path_en]))
+            self.assertEqual(len(parts_en), len(parts), path_en.name)  # zip would pair the wrong parts
             with self.subTest(doc=path_en.name):
-                self.assertEqual(len(parts_en), len(parts))
                 self.assertTrue(sum(map(_values, parts), Counter()))
             for part, part_en in zip(parts, parts_en):
-                with self.subTest(doc=path_en.name, part=part_en.strip().splitlines()[0][:60]):
-                    self.assertEqual(dict(_values(part) - _values(part_en)), {})
+                with self.subTest(doc=path_en.name, part=part_en.strip().partition("\n")[0][:60]):
+                    self.assertEqual(dict(_values(part) - _values(_without_chinese_code(part_en))), {})
 
     def test_the_other_fixed_strings_stand_in_their_place_in_both_versions(self):
         for english, chinese, places in FIXED_STRINGS:
-            (path, place), (path_en, place_en) = places.items()
-            with self.subTest(string=english):
-                self.assertIn(chinese, _part(path, *place))
-                part_en = _part(path_en, *place_en)
-                self.assertIn(f"`{english}`", part_en)
-                self.assertIn(chinese, part_en)
+            for path, place in places.items():
+                with self.subTest(string=english, doc=path.name):
+                    part = _part(path, *place)
+                    self.assertIn(chinese, part)
+                    if path in ENGLISH:
+                        self.assertIn(ENGLISH[path], places)  # and in the same place of the English version
+                    else:
+                        self.assertIn(f"`{english}`", part)
 
 
 class Setup(unittest.TestCase):
@@ -304,6 +324,20 @@ class Setup(unittest.TestCase):
             with self.subTest(doc=path.name):
                 self.assertIn(phrase, _section(path, PART_A[path]))
 
+    def test_the_guides_and_the_handoff_list_the_rules_added_after_rehearsal_1(self):
+        # T5.4 round 1 added three rules to quick/agent-instructions.md; the user checks the pasted text by the list.
+        chinese = ("类目维度名", "活动日期查 dim_promotion", "差评原因用倒排索引检索")
+        for path, text, key, items in (
+                (GUIDE, _part(GUIDE, PART_A[GUIDE], "A2 "), "新版比 P4 多了几条", chinese),
+                (GUIDE_EN, _part(GUIDE_EN, PART_A[GUIDE_EN], "A2 "), "Compared with P4, the new version adds",
+                 ("the category dimension names", "promotion dates from dim_promotion",
+                  "review causes through the inverted index")),
+                (HANDOFF, _section(HANDOFF, "当前状态"), "`quick/agent-instructions.md` 更新了", chinese)):
+            with self.subTest(doc=path.name):
+                line = _one_line(text, key, strip_backticks=True)
+                for item in items:
+                    self.assertIn(item, line)
+
 
 class Runbook(unittest.TestCase):
     def test_has_exactly_its_parts(self):
@@ -326,6 +360,25 @@ class Runbook(unittest.TestCase):
         self.assertEqual(_scripts(RUNBOOK_EN), _scripts(RUNBOOK))
         self.assertEqual(_commands(_text(RUNBOOK_EN)), commands)
 
+    def test_the_cleanup_keeps_the_cdk_bootstrap_stack(self):
+        # CDKToolkit and its S3 bucket existed before this project (the agentcore deploy only uploaded its assets
+        # to the bucket); other CDK projects of the same account and region may use them. infra/99-cleanup.sh
+        # deletes only the stack STACK_NAME, never the bootstrap stack, a bucket or the uploaded assets, and the
+        # runbooks say so.
+        cleanup = (ROOT / "infra" / "99-cleanup.sh").read_text(encoding="utf-8")
+        self.assertRegex(cleanup, r'(?m)^STACK_NAME="\$\{STACK_NAME:-AgentCore-dorismcp-default\}"$')
+        self.assertNotRegex(cleanup, r"(?i)delete-stack[^\n]*CDKToolkit|cdk\s+destroy"
+                                     r"|s3api\s+delete-(?:bucket|objects?)\b|s3\s+(?:rb|rm)\b")
+        for path, terms in ((RUNBOOK, ("不删除", "`CDKToolkit`", "S3 桶", "本项目之前就已存在",
+                                       "只往桶里上传了资产", "所以保留", "也留在这个桶里")),
+                            (RUNBOOK_EN, ("does not delete", "`CDKToolkit`", "S3 bucket",
+                                          "existed before this project", "only uploaded its assets",
+                                          "so they are kept", "also stay in that bucket"))):
+            with self.subTest(doc=path.name):
+                line = _one_line(_section(path, AFTER[path]), "CDKToolkit")
+                for term in terms:
+                    self.assertIn(term, line)
+
 
 class English(unittest.TestCase):
     """Each English version has the shape of its Chinese version and each points to the other."""
@@ -345,13 +398,14 @@ class English(unittest.TestCase):
 
     def test_the_english_versions_refer_to_the_english_documents(self):
         # A Chinese file that has an English version is named only where the Chinese file itself is meant: the
-        # back-pointer ("Chinese version: `…`") and the Chinese template ("the Chinese one in `…`").
+        # back-pointer ("Chinese version: `…`") and the Chinese template ("the Chinese one in `…`"). Backticked
+        # or not: a plain quick/runbook.md in an English file points at the Chinese file just the same.
         chinese = "|".join(re.escape(f"quick/{path.name}") for path, _ in self.PAIRS)
         for _, path_en in self.PAIRS:
             for line in _text(path_en).splitlines():
-                for match in re.finditer(rf"`(?:{chinese})`", line):
+                for match in re.finditer(rf"(?<![\w/.-])(?:{chinese})\b", line):
                     with self.subTest(doc=path_en.name, line=line[:60]):
-                        self.assertRegex(line[:match.start()], r"\bChinese\b[^`]{0,20}$")
+                        self.assertRegex(line[:match.start()], r"\bChinese\b[^`]{0,20}`?$")
 
 
 class Hygiene(unittest.TestCase):

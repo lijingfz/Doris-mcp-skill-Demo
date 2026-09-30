@@ -205,6 +205,14 @@ class TestShippedCalls(unittest.TestCase):
         self.assertRegex(sql[0], r"^SELECT ")
 
 
+class TestFlowOption(unittest.TestCase):
+    def test_the_profile_wait_outlasts_a_30_s_platform_transient(self):
+        # One list_recent_queries call that took 30 s on the platform used up the former 15 s budget and failed
+        # a demo-check pre; demo-check runs `flow` without --wait.
+        self.assertEqual(mcp_smoke.parse_args(["--url", GW_URL, "flow"]).wait, 45.0)
+        self.assertEqual(mcp_smoke.parse_args(["--url", GW_URL, "flow", "--wait", "5"]).wait, 5.0)
+
+
 class TestConns(_SmokeCase):
     async def test_counts_only_never_hosts_or_statements(self):
         rc, out = await self.run_main("conns")

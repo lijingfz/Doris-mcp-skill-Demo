@@ -54,6 +54,7 @@ Ask each question only when the previous answer is fully shown; copy the questio
 - **A Doris host address or IP in an answer** (e.g. the verbatim text of a 2003 connection error): do not read it out; if you are recording, cut that part. Tell the AI after the demo; it is handled as in design §14.
 - **A permission pop-up for `doris___reload_semantic_layer`**: deny it and let the agent go on answering without reloading.
 - **The agent asks you to run `doriscli`, a mysql client or curl**: reply `There is no command line here. Use only the Doris MCP tools, following the doris-mcp-adapter mapping table` (in Chinese: 「这里没有命令行，只能用 Doris MCP 工具，按 doris-mcp-adapter 的对照表来」).
+- **In step 5 the agent asks you for the SQL or the query_id of the slow query**: reply `Write your own query that counts daily UV on ecom.fact_user_event and run it with profile` (in Chinese: 「你自己写一条按天统计 ecom.fact_user_event UV 的查询，带 profile 执行」).
 - **The agent wants to run a write operation (DDL, `KILL`, `SET`)**: the tool rejects it; have it write out the statement and say that a person runs it.
 - **The connector fails, asks you to sign in again, or the tool count is wrong**: first switch to the backup 「Doris 专家（svc）」 (web version); after the demo, create a new connector as in "Setup".
 - **You suspect a backend problem**: re-run `bash scripts/demo-check.sh pre` on the dev box and see which check is `[FAIL]`.
@@ -75,7 +76,7 @@ Ask each question only when the previous answer is fully shown; copy the questio
      bash infra/99-cleanup.sh
      ```
 
-     Only after confirmation (GATE; one confirmation covers only this one run) run `APPLY=1 bash infra/99-cleanup.sh`. In order, it deletes the Gateway target, the Gateway, the Runtime's stack, the Interface endpoints (billed continuously), Cognito, the secret, the rules on the Doris SG that reference the Runtime SG, this project's SGs and the two IAM roles; `infra/state.env` is kept as the record of what was deleted.
+     Only after confirmation (GATE; one confirmation covers only this one run) run `APPLY=1 bash infra/99-cleanup.sh`. In order, it deletes the Gateway target, the Gateway, the Runtime's stack, the Interface endpoints (billed continuously), Cognito, the secret, the rules on the Doris SG that reference the Runtime SG, this project's SGs and the two IAM roles; `infra/state.env` is kept as the record of what was deleted. It does not delete the CDK bootstrap stack `CDKToolkit` or its S3 bucket: they existed before this project (the agentcore deploy only uploaded its assets to the bucket) and other CDK projects in the same account and region may use them, so they are kept. The CodeZip and the other assets the deploy uploaded also stay in that bucket.
    - Doris side (optional, confirmed separately): the `mcp_svc` account and the semantic layer's database `system_mcp` are not deleted by `99-cleanup.sh`. If there will be no more demos, you run the two statements below as root in your own mysql client (the AI does not run them):
 
      ```

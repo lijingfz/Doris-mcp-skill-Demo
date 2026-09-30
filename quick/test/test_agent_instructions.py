@@ -24,6 +24,7 @@ INSTRUCTIONS = ROOT / "quick" / "agent-instructions.md"
 QUICK_LIMIT = 50_000  # characters; design §4.4
 GATEWAY_PREFIX = "doris___"  # <target>___<tool>, design §4.5
 GRAINS = ("day", "week", "month", "quarter", "year")  # metric_time__<grain>; every one compiles (SemanticLayer)
+LINE_GMV_ENTITIES = ("category__", "brand__", "shop__")  # their dimensions compile with line_gmv, the rest with gmv
 
 
 def _text() -> str:
@@ -141,6 +142,38 @@ class Rules(unittest.TestCase):
         for term in ("mini_program_share", "0~1", "无数据"):
             self.assertIn(term, framing)
 
+    def _bullet(self, key: str) -> str:
+        """The one line of 演示口径 that holds `key`."""
+        lines = [line for line in _section("演示口径").splitlines() if key in line]
+        self.assertEqual(len(lines), 1, lines)
+        return lines[0]
+
+    def test_categories_use_the_published_dimension_names(self):
+        # Rehearsal round 1: the agent called list_dimensions_for_metric, still grouped by a category dimension
+        # name of its own (VALIDATION_ERROR) and fell back to hand-written SQL. Backticked, the three names are
+        # compiled by test_metric_and_dimension_names_exist_in_the_semantic_layer.
+        bullet = self._bullet("`category__cat1_name`")
+        for term in ("`category__cat2_name`", "`category__cat3_name`", "没有别的类目维度名", "不要猜"):
+            self.assertIn(term, bullet)
+
+    def test_promotion_periods_come_from_dim_promotion(self):
+        # Rehearsal round 1: the agent used its own dates for 618 (06-01..06-18), so its numbers differed from
+        # the reference values of quick/P5-guide.md step 3. dim_promotion holds 618 and 双 11 of several years;
+        # on the demo day the most recent finished ones are 2026年618 and 2025年双11, the reference periods.
+        bullet = self._bullet("`ecom.dim_promotion`")
+        for term in ("618", "双 11", "起止日期先查", "各取最近一次已结束的活动", "按查到的日期过滤", "不要自己估日期"):
+            self.assertIn(term, bullet)
+
+    def test_review_causes_use_the_inverted_index(self):
+        # Rehearsal round 1: the agent read the bad reviews row by row instead of using the inverted index on
+        # fact_review.content, the talking point of act 5 (quick/runbook.md row 4). The TOKENIZE call and the
+        # LATERAL VIEW are the syntax that runs on the cluster: TOKENIZE returns a JSON string, not an array.
+        bullet = self._bullet("`ecom.fact_review.content`")
+        for term in ("倒排索引", "`TOKENIZE(content, '\"parser\"=\"chinese\"')`", "返回 JSON 字符串",
+                     "`LATERAL VIEW explode_json_array_string(json_extract(…, '$[*].token'))`",
+                     "`MATCH_PHRASE`", "`MATCH_ANY`", "不要用 LIKE", "不要把评价逐条取回来读"):
+            self.assertIn(term, bullet)
+
 
 class SemanticLayer(unittest.TestCase):
     """The names the agent is told to use are what list_metrics publishes and query_metric compiles."""
@@ -163,11 +196,14 @@ class SemanticLayer(unittest.TestCase):
         self.assertTrue(metrics and dimensions)
         self.assertLessEqual(metrics, self.published)
         for dimension in sorted(dimensions):
-            with self.subTest(dimension=dimension):
+            # 演示口径: GMV by category, brand or shop is line_gmv (the category and brand dimensions hang off the
+            # order items, only line_gmv reaches them); every other dimension goes with the order-level gmv.
+            metric = "line_gmv" if dimension.startswith(LINE_GMV_ENTITIES) else "gmv"
+            with self.subTest(dimension=dimension, metric=metric):
                 try:
-                    self.backend.sql(Case(dimension, ("gmv",), (dimension,), "", ""))
+                    self.backend.sql(Case(dimension, (metric,), (dimension,), "", ""))
                 except ReconcileError as e:
-                    self.fail(f"group_by {dimension}: {e}")
+                    self.fail(f"group_by {dimension} with {metric}: {e}")
 
     def test_the_same_days_comparison_is_a_reconcile_case(self):
         # The same-days recipe in 演示口径 is checked against hand-written SQL on the cluster by reconcile.py.

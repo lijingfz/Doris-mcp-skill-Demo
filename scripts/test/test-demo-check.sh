@@ -86,6 +86,7 @@ check() { # NAME EXPECTED ACTUAL
   if [[ "$2" == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1: expected '$2', got '$3'"; FAILS=$((FAILS + 1)); fi
 }
 EXTRA=()  # VAR=value pairs for the next run (the caller's environment, fake knobs)
+BASH_OPTS=()  # options of bash itself for the next run (-x)
 CRED="$TMP/cred.env"
 # run_check ARGS... — sets RC, OUT (stdout), ERR (stderr), LOG (what the fakes saw)
 run_check() {
@@ -93,7 +94,7 @@ run_check() {
   OUT="$(env -u GW_TOKEN -u MAX_CONNS -u TOKEN_CMD -u PYTHON -u CREDENTIALS_FILE -u AWS_REGION "${EXTRA[@]}" \
     PATH="$TMP/bin:$PATH" FAKE_DIR="$TMP" FAKE_LOG="$TMP/fake.log" STATE_FILE="$TMP/state.env" \
     PYTHON="$TMP/bin/fake-python" CREDENTIALS_FILE="$CRED" TOKEN_CMD="bash $TMP/token.sh" \
-    bash "$SCRIPT" "$@" 2>"$TMP/err")"
+    bash "${BASH_OPTS[@]}" "$SCRIPT" "$@" 2>"$TMP/err")"
   RC=$?; ERR="$(cat "$TMP/err")"; LOG="$(cat "$TMP/fake.log")"
 }
 has() { [[ "$1" == *"$2"* ]] && echo yes || echo no; }
@@ -245,6 +246,19 @@ EXTRA=(FAKE_FAIL=gw_latency.report); fails_one "slow minute" "[FAIL] latency" "d
 EXTRA=(FAKE_AWS_FAIL="logs filter-log-events"); fails_one "filter-log-events error" "[FAIL] audit" "demo-check post: 4/5 passed" \
   post --since "$SINCE" --until "$UNTIL"
 EXTRA=()
+
+# --- bash -x: the script turns tracing off ----------------------------------------------------------------
+# Traced, it would print the token and both Doris passwords (on stderr, and on stdout through check's 2>&1).
+secrets_shown() { grep -cE -- "$TOKEN|root-pass-fixture|ro-pass-fixture" <<<"$OUT
+$ERR"; }
+BASH_OPTS=(-x)
+run_check pre
+check "bash -x pre: exit 0, all checks pass" "0|$PRE_PASS" "$RC|$(verdicts)"
+check "bash -x pre: the token and the passwords are not in stdout or stderr" 0 "$(secrets_shown)"
+run_check post --since "$SINCE" --until "$UNTIL"
+check "bash -x post: exit 0" 0 "$RC"
+check "bash -x post: the token and the passwords are not in stdout or stderr" 0 "$(secrets_shown)"
+BASH_OPTS=()
 
 # --- bad arguments: usage on stderr, exit 2, nothing runs ---------------------------------------------
 bad() { # NAME ARGS...

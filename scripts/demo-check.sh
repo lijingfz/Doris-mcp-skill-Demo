@@ -21,6 +21,7 @@
 #            repo's infra/state.env, whatever STATE_FILE says)
 # Exit code: 0 when every check passes, 1 when one fails, 2 on bad arguments or an incomplete state file.
 set -uo pipefail
+set +x # `bash -x` would print the Gateway token and the Doris passwords
 
 MASK='s/\b[0-9]{1,3}(\.[0-9]{1,3}){3}\b/<ip>/g; s#https://[^ )"`]+#<url>#g'
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -51,6 +51,7 @@
 - **回答里出现 Doris 主机地址或 IP**（例如 2003 连接错误的原文）：不要念出来；录屏的话剪掉这一段。演示后告诉 AI，按 design §14 处理。
 - **弹出 `doris___reload_semantic_layer` 的权限窗口**：拒绝，让 agent 不重载继续回答。
 - **agent 让你去运行 `doriscli`、mysql 客户端或 curl**：回复「这里没有命令行，只能用 Doris MCP 工具，按 doris-mcp-adapter 的对照表来」。
+- **第 5 步 agent 问你要慢查询的 SQL 或 query_id**：回复「你自己写一条按天统计 ecom.fact_user_event UV 的查询，带 profile 执行」。
 - **agent 要执行写操作（DDL、`KILL`、`SET`）**：工具会拒绝；让它把语句写出来，说明由人工执行。
 - **连接器失效、要求重新登录或工具数不对**：先切到备份「Doris 专家（svc）」（网页版）；演示后按「设置」新建连接器。
 - **怀疑后端有问题**：在开发机上重跑 `bash scripts/demo-check.sh pre`，看哪一项 `[FAIL]`。
@@ -72,7 +73,7 @@
      bash infra/99-cleanup.sh
      ```
 
-     确认之后（GATE，一次确认只对应这一次）才执行 `APPLY=1 bash infra/99-cleanup.sh`。它按顺序删除 Gateway target、Gateway、Runtime 的栈、Interface endpoints（持续计费）、Cognito、secret、Doris SG 上引用 Runtime SG 的规则、本项目的 SG 和两个 IAM 角色；`infra/state.env` 保留，作为删了什么的记录。
+     确认之后（GATE，一次确认只对应这一次）才执行 `APPLY=1 bash infra/99-cleanup.sh`。它按顺序删除 Gateway target、Gateway、Runtime 的栈、Interface endpoints（持续计费）、Cognito、secret、Doris SG 上引用 Runtime SG 的规则、本项目的 SG 和两个 IAM 角色；`infra/state.env` 保留，作为删了什么的记录。它不删除 CDK 的引导栈 `CDKToolkit` 和它的 S3 桶：它们在本项目之前就已存在（agentcore 部署只往桶里上传了资产），同一账号、同一区域的其他 CDK 项目也可能在用，所以保留。部署上传的 CodeZip 等资产也留在这个桶里。
    - Doris 侧（可选，单独确认）：`mcp_svc` 账号和语义层的库 `system_mcp` 不会被 `99-cleanup.sh` 删除。如果以后不再演示，由你用 root 在自己的 mysql 客户端里执行下面两句（AI 不执行）：
 
      ```

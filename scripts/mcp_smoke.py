@@ -291,7 +291,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p_flow = sub.add_parser("flow", help="profile flow + error cases against a Doris MCP")
     p_flow.add_argument("--prefix", default="", help="tool name prefix, e.g. doris___ through the Gateway")
     p_flow.add_argument("--table", default="ecom.fact_order", help="table the profiled COUNT(*) reads")
-    p_flow.add_argument("--wait", type=float, default=15.0, help="seconds to wait for the profile to appear")
+    p_flow.add_argument("--wait", type=float, default=45.0, help="seconds to wait for the profile to appear")
     p_time = sub.add_parser("time", help="time each call of a calls file (P3 latency / concurrency checks)")
     p_time.add_argument("--calls", default=str(DEFAULT_CALLS), help="JSON list of {tool, params} (default: %(default)s)")
     p_time.add_argument("--prefix", default="", help="tool name prefix, e.g. doris___ through the Gateway")
