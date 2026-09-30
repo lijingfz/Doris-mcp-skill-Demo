@@ -95,6 +95,7 @@ cat infra/state.env                                                       # 已�
 
 | 文件 | 作用 |
 |---|---|
+| `README.md` | 项目说明：架构、用法、工作原理、测试原理、资源保留与清理（第一次看这个仓库、或隔一段时间回来时先读）|
 | `RESUME.md` | 本文：人怎么继续 |
 | `CLAUDE.md` | Claude 怎么继续（恢复协议）+ 硬性规则 |
 | `specs/doris-mcp-quick/progress.md` | **当前状态** + 日志 |

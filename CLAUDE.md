@@ -28,6 +28,7 @@
 
 | 路径 | 作用 |
 |---|---|
+| `README.md` | 给人看的项目总说明（架构、用法、工作原理、测试原理、资源保留与清理；不含 URL / IP / ID / secret）|
 | `RESUME.md` | 给用户看的「下次如何继续」操作指南（启动方式、第一句话怎么说、GATE / secret 注意事项）|
 | `specs/doris-mcp-quick/requirements.md` | 需求（R-xx）+ 已定决策 D1–D8 |
 | `specs/doris-mcp-quick/design.md` | 设计（由 `docs/改造方案.md` v0.1 演进而来，v0.1 原稿见 git 历史第一个提交）|

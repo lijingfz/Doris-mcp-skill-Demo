@@ -4,13 +4,13 @@
 
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
-- **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 8（T5.5）已完成：P5 演示准备完成（Task 1–8）；Task 9（T5.6 清理）等真正的演示结束
-- **下一步**：真正的演示（用户按 `quick/runbook.md` / `quick/runbook.en.md`；演示前 30 分钟内跑 `demo-check pre`，结束后跑 `post`）；演示结束、用户说「演示结束了」之后做 Task 9（T5.6 清理，GATE）
+- **阶段**：**P5：Task 1–8 已完成，Task 9 按用户决定推迟**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
+- **进行中**：无。P5 Task 1–8（T5.1–T5.5）已完成并在本地快进合并到 `main`；2026-09-30 按用户要求补了根目录的项目说明 `README.md`（架构、使用方法、工作原理、测试原理）
+- **下一步**：由用户决定。用户 2026-09-30 决定：不再做测试和演示检查，**AWS 资源保留**（以后还要用）。再次使用前先跑 `bash scripts/demo-check.sh pre`（见 `README.md` 第 8 节）。Task 9（T5.6 清理）推迟，没有日期；要清理时由用户自己执行 `infra/99-cleanup.sh`（先 dry-run，再 `APPLY=1`），Claude 只做只读核对和记录（design v1.0、RESUME、progress、提交）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
-- **阻塞**：等待用户：真正的演示（演示结束后说「演示结束了」开始 Task 9）；是否推送（D8）。`p5-skills`（Task 1–8 和最终整体评审的修正）已在本地快进合并到 `main`，没有推送
+- **阻塞**：无硬阻塞。等待用户：是否推送（D8；`main` = `p5-skills` 只在本地）；Task 9 何时做。保留期间：Gateway exception level 仍是 DEBUG（改回走 `infra/30-gateway.sh` 的 GATE），Quick 里 `execute_query` 的 Ask Each Time（D7）还没改回；固定费用主要是 2 个 Interface endpoint（约 $29/月）和 2 个 secret
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp`，version 4，执行角色 `doris-mcp-runtime-role`；CDK 生成的执行角色和它的 DefaultPolicy 已在 T3.2 删除，栈里没有 IAM 资源）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；IAM 角色 `doris-mcp-runtime-role`（内联策略 `doris-mcp-runtime`，没有托管策略，T3.1；T3.2 起是 Runtime 的执行角色）；Gateway `doris-mcp-gw`（target `doris`，T3.4 同步到完整 server 的 12 个工具；`exceptionLevel` 是 DEBUG，按 T5.5 决定保留到演示结束；description 在 T3.4 被清空，T5.5 补上）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
 - **Doris 变更**：T2.5 以 root 新建库 `system_mcp` 和 3 张表 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom`；workspace `ecom` 的 `semantic_version=3`（T2.5 发布为 2；P2 整体评审 I1 重新发布为 3，只改了 `metrics.yaml`），active 10 个文件，staging 为空；没有执行任何 GRANT，`ecom` 库未改动。回滚（需 GATE）：root 执行 `DROP DATABASE system_mcp`。T2.2 以 root 新建用户 `'mcp_svc'@'%'`（密码 = Secrets Manager `doris-mcp/mcp_svc`），权限按 R-42：`internal.ecom` SELECT、`internal.system_mcp` SELECT + CREATE（另有 Doris 默认的 `internal.information_schema`、`internal.mysql` SELECT 和默认 workload group `normal` 的 USAGE）；不授予 ADMIN / LOAD / ALTER / DROP；host `'%'` 按 D6，P3 T3.5 收紧为 `'172.31.%'`（见本条末尾）。回滚（需 GATE）：root 执行 `DROP USER 'mcp_svc'@'%'`（T3.5 之后该身份已不存在，对应的是 `'mcp_svc'@'172.31.%'`）。T2.3 以 `mcp_svc` 复核权限矩阵 14/14：upstream store 初始化成功（对象都已存在），9 个写探针全部被 Doris 拒绝，没有任何变更。T2.6 以 `mcp_svc` 经进程内 MCP server 只读对账 11/11，没有任何变更。此前 spec 阶段只用 `demo_ro` 做过只读查询。**T3.5**（GATE，用户确认「可以执行」）以 root 执行 `doris/02_mcp_user_vpc.sql` 的 5 条语句：新建 `'mcp_svc'@'172.31.%'`（密码不变，来自 Secrets Manager `doris-mcp/mcp_svc`），授权与原来的 `'%'` 逐项相同，最后 `DROP USER IF EXISTS 'mcp_svc'@'%'`，即 **`'mcp_svc'@'172.31.%'` 替换了 `'%'`**；`max_user_connections=100` 不变；开发机从此不能以 `mcp_svc` 登录（1045）；`demo_ro` 和 root 不受影响。回滚（需 GATE）：重跑 `01_mcp_user.sql`（`APPLY=1 bash doris/apply-admin-sql.sh doris/01_mcp_user.sql`，重建 `'mcp_svc'@'%'`，密码和授权不变；`'172.31.%'` 保留）
 
@@ -887,3 +887,13 @@
 - 最终整体评审（opus，main..dbdcc4f，全部离线测试通过：quick 89、scripts 138、doris 168、agentcore 154、upstream 离线、shell 100 / 36 / 81 / 30 / 5；`build_skills.py --source … --check` 119 个文件一致）：可以合并，0 Critical、0 Important、3 Minor，都只涉及文档，不需要重新部署。
 - 修正（控制方，一轮）：M1 两本 runbook 开头改成「来自第 1 轮彩排（第 2 轮按用户决定跳过）」；M2 Task 9 Step 5 的 阶段 / 下一步 / 阻塞 文字和 P5 完成标准（彩排 1 轮、version 4、当前测试数、最终整体评审）；M3 design P-11 行写明 NOT 同样报错（`_METRIC_TIME_NOT_ERROR`）；handoff 补上 version 4 的 query_id 修复。复审（同一评审员）：通过；剩 1 个可选 Minor（Task 9 若在 `p5-cleanup` 上执行，最终记录里的分支名要写实际分支），不改。
 - 本提交之后在本地把 `p5-skills` 快进合并到 `main`，不推送；之后回到 `p5-skills`，Task 9 在演示结束后于该分支执行。
+
+### 2026-09-30 用户决定保留 AWS 资源；项目说明 README.md
+- 用户：「不用进行测试了，AWS 资源保留，我以后还需要使用。请补充这个项目的说明文件……」。因此不再做测试和演示检查；Task 9（T5.6 清理）推迟、没有日期；以后要清理时由用户自己执行 `infra/99-cleanup.sh`，Claude 做只读核对和记录。
+- 新建根目录 `README.md`（中文），共 12 节：项目简介、架构（总览图、组件、一次工具调用的全过程、网络与安全组、身份与账号、可观测性、设计理由）、目录结构、工作原理（补丁、12 个工具、profile、语义层、metric_time、Quick 侧）、使用方法、测试原理（分层、shell 测试的 fake、文档即测试、嵌入代码与突变测试、在线检查、安全测试、彩排）、安全设计、资源保留期间的注意事项与成本、清理、已知限制、开发方式与断点恢复、文档索引。`RESUME.md` 文件地图、`CLAUDE.md` 关键路径各加一行。
+- 过程：Opus implementer 起草，重新测得离线测试 quick 89、scripts 138、doris 168、agentcore 154，upstream 离线测试通过，9 个 shell 测试文件全部通过。Opus reviewer 结论是 With fixes：0 Critical、1 Important、7 Minor，全部由控制方改掉。Important 一条是 `infra/25-runtime-state.sh` 的 dry-run 也会打印 ARN / URL，README 里的命令改为经 grep 过滤只看状态行。
+- 核对：README 里 URL / IPv4 / ARN / 12 位账号 / 资源 ID / IP 前缀 0 处；`state.env` 里 21 个值在 README 里 0 处命中；`check-secrets.sh` OK。
+- implementer 顺带发现的 spec 旧说法（没有改，留给用户决定）：
+  - `tasks.md` P5 表头的测试数；
+  - design §0 的补丁数、§6.3 的对账用例数（11 → 12）、§8.3 的连接器名、§9 的 `doriscli tablet` 映射、§12 的 D1–D8（已有 D9）；
+  - `mcp-server/UPSTREAM.md` 补丁表没列 query_id 修正。
