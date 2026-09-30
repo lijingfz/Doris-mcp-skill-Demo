@@ -5,12 +5,12 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 8：fix round 2（618、双 11 的活动期写进指令）已提交；等用户重贴指令、在新对话里重问第 3 步
-- **下一步**：用户在 Quick 里给「Doris 专家」和「Doris 专家（svc）」重贴 `quick/agent-instructions.md`（粘到指令框，不是「描述」栏），新对话里重问第 3 步；控制方用审计和 `demo-check post` 核对日期和结论；然后 Step 5（design v0.9，勾选 T5.5，提交）
+- **进行中**：Task 8（T5.5）已完成：P5 演示准备完成（Task 1–8）；Task 9（T5.6 清理）等真正的演示结束
+- **下一步**：真正的演示（用户按 `quick/runbook.md` / `quick/runbook.en.md`；演示前 30 分钟内跑 `demo-check pre`，结束后跑 `post`）；演示结束、用户说「演示结束了」之后做 Task 9（T5.6 清理，GATE）
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
-- **阻塞**：无
+- **阻塞**：等待用户：真正的演示；`p5-skills` 是否合并到 `main`、是否推送（D8）
 - **已创建的 AWS 资源**：SG `doris-mcp-rt`、`doris-mcp-vpce`；`doris-demo-sg` 新增 9030/8030 ← `RT_SG`；VPC endpoints S3 / logs / secretsmanager；CloudFormation 栈 `AgentCore-dorismcp-default`（Runtime `dorismcp_dorismcp`，version 4，执行角色 `doris-mcp-runtime-role`；CDK 生成的执行角色和它的 DefaultPolicy 已在 T3.2 删除，栈里没有 IAM 资源）；Cognito user pool `doris-mcp-quick`（域名、resource server `doris-mcp`、client A `quick-user` / B `quick-service`、用户 `demo`）；Secrets Manager `doris-mcp/cognito-demo-user`、`doris-mcp/mcp_svc`（T2.1）；IAM 角色 `doris-mcp-gateway-role`（内联策略 `invoke-dorismcp-runtime`）；IAM 角色 `doris-mcp-runtime-role`（内联策略 `doris-mcp-runtime`，没有托管策略，T3.1；T3.2 起是 Runtime 的执行角色）；Gateway `doris-mcp-gw`（target `doris`，T3.4 同步到完整 server 的 12 个工具；`exceptionLevel` 是 DEBUG，按 T5.5 决定保留到演示结束；description 在 T3.4 被清空，T5.5 补上）；账号级 X-Ray indexing rule `Default` = 100%（T0.4 时 CLI 自动修改，用户决定保持现状）—— ID 见 `infra/state.env`
 - **Doris 变更**：T2.5 以 root 新建库 `system_mcp` 和 3 张表 `workspace_metadata`、`active_store_ecom`、`staging_store_ecom`；workspace `ecom` 的 `semantic_version=3`（T2.5 发布为 2；P2 整体评审 I1 重新发布为 3，只改了 `metrics.yaml`），active 10 个文件，staging 为空；没有执行任何 GRANT，`ecom` 库未改动。回滚（需 GATE）：root 执行 `DROP DATABASE system_mcp`。T2.2 以 root 新建用户 `'mcp_svc'@'%'`（密码 = Secrets Manager `doris-mcp/mcp_svc`），权限按 R-42：`internal.ecom` SELECT、`internal.system_mcp` SELECT + CREATE（另有 Doris 默认的 `internal.information_schema`、`internal.mysql` SELECT 和默认 workload group `normal` 的 USAGE）；不授予 ADMIN / LOAD / ALTER / DROP；host `'%'` 按 D6，P3 T3.5 收紧为 `'172.31.%'`（见本条末尾）。回滚（需 GATE）：root 执行 `DROP USER 'mcp_svc'@'%'`（T3.5 之后该身份已不存在，对应的是 `'mcp_svc'@'172.31.%'`）。T2.3 以 `mcp_svc` 复核权限矩阵 14/14：upstream store 初始化成功（对象都已存在），9 个写探针全部被 Doris 拒绝，没有任何变更。T2.6 以 `mcp_svc` 经进程内 MCP server 只读对账 11/11，没有任何变更。此前 spec 阶段只用 `demo_ro` 做过只读查询。**T3.5**（GATE，用户确认「可以执行」）以 root 执行 `doris/02_mcp_user_vpc.sql` 的 5 条语句：新建 `'mcp_svc'@'172.31.%'`（密码不变，来自 Secrets Manager `doris-mcp/mcp_svc`），授权与原来的 `'%'` 逐项相同，最后 `DROP USER IF EXISTS 'mcp_svc'@'%'`，即 **`'mcp_svc'@'172.31.%'` 替换了 `'%'`**；`max_user_connections=100` 不变；开发机从此不能以 `mcp_svc` 登录（1045）；`demo_ro` 和 root 不受影响。回滚（需 GATE）：重跑 `01_mcp_user.sql`（`APPLY=1 bash doris/apply-admin-sql.sh doris/01_mcp_user.sql`，重建 `'mcp_svc'@'%'`，密码和授权不变；`'172.31.%'` 保留）
 
@@ -869,3 +869,14 @@
 - 决策（Step 3，用户选择）：① `exceptionLevel` 保留 DEBUG 到演示结束；② 2003 主机地址不补丁（第 1 轮没有出现 2003，4 个失败都是 SQL 错误或参数校验）；③ `query_timeout` 保持 50 s；④ Gateway description 补上。
 - Gateway（Step 4，GATE）：用户确认「确认更新 Gateway」后执行 `infra/30-gateway.sh`（`APPLY=1`，`GW_EXCEPTION_LEVEL=DEBUG`），exit 0；只读核对 READY，description = `Quick desktop -> Doris MCP (Runtime dorismcp)`，`exceptionLevel` DEBUG，authorizer / 角色 / 策略不变；`state.env` 不变；`demo-check pre` 10/10。
 - 用户要做：在 Quick 里给「Doris 专家」重贴 `quick/agent-instructions.md`，新对话里重问第 3、4 步。
+
+### 2026-09-30 P5 Task 8（T5.5）Step 2、重问、Step 5：耗时表、活动期写进指令、design v0.9
+
+- Step 2（`2d1b47e`）：`quick/runbook.md` / `runbook.en.md`「每步耗时」按第 1 轮审计推算（第 2 轮一列写「跳过」）；指南 A2 补一句：Quick agent 的「描述」栏只能写一行纯文本（有换行时保存报 `\P{C}*` 校验错误），全文粘到指令框。quick/test 85 → 86。
+- 重问第 4 步：按新规则回答（`metric_time` 过滤、`fact_review` 分词统计、找到店铺 20163），`post` 5/5。
+- 重问第 3 步两次：类目维度用对了（`category__cat1_name`），但没有查 `dim_promotion`，618 按 06-01 至 06-18、双 11 按 11-01 至 11-11 算。demo_ro 只读核对：按 `dim_promotion` 的活动期（2026-05-26 至 06-18、2025-10-20 至 11-11）是家用电器 30.52%、手机数码 26.04%（参照值）；2026-06-01 至 06-18 家用电器 31.45%；2025-06-01 至 06-18 手机数码 28.08%；2025-11-01 至 11-11 手机数码 27.94%。
+- 用户决定把两个活动期写进指令（`f416232`）：没说年份时就用这两段（英文 Double 11 也算），别的年份或活动先查 `dim_promotion`（没说年份取最近的一次）；指南第 3 步的期望跟着改；新测试核对指令的日期和指南第 3 步的活动期一致。指令 3484 字符（约 3500）。quick/test 88；突变 t8 49/49、t8b 6/6、ai 7/7、docs 15/15、adx 14/14、bil 44/44。评审（Opus）：通过，4 个 Minor 当轮改完，复审通过。
+- 重问第 3 步第 3 次（重贴指令后）：8 次调用全部成功，`post` 5/5，单次最长 7504 ms；`query_metric` 用了双 11 的活动期，手写 SQL 里 618 仍是 06-01 至 06-18（审计里的 SQL 截到 200 字符）。用户：「基本符合预期」，选择接受。
+- 手册（`ffd76ef`）：「出问题时」/`If something goes wrong` 加一条：第 3 步占比对不上（31.45% / 27.94%）时怎么判断，结论方向不变时照常讲，要对上参照值时的固定追问句。quick/test 89；突变 t8 52/52，bil 44/44。评审通过，1 个 Minor（只比对了百分比，没比对估计的日期）留给整体评审。
+- 其他：Task 5 的两个 Minor 按计划不修（`TOKEN_CMD` 只在离线测试里换 `STATE_FILE`，测试本来就替换了 `TOKEN_CMD`；「已经不存在」的分支在 Task 9 第二次 dry-run 时会对真实账号走一遍）。
+- design v0.9：变更记录；§5.3 的 query_id 校验改成每段 1–16 位（与 Runtime version 4 一致）；§13 的 60 s、scope、2003、502、adapter 几行写入 T5.3 / T5.4 的实测和 T5.5 的决定；§14 的 Gateway DEBUG 写入决定。勾选 T5.5。
