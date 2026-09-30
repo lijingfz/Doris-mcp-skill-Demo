@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 7 Step 3（T5.3）已完成；双语（用户 2026-09-30 追加）已完成：agent 按提问语言回答，新增英文版 `quick/P5-guide.en.md`、`quick/runbook.en.md`；Step 4 只做彩排第 1 轮（用户决定跳过第 2 轮），时区 Asia/Shanghai
-- **下一步**：用户在 Quick 里把「Doris 专家」和「Doris 专家（svc）」的指令换成新的 `quick/agent-instructions.md`（约 2900 字符），然后说「开始第 1 轮」：AI 跑 `demo-check pre`、记开始时间，用户按 P5-guide（中文或英文版）问 7 个问题，用模板 2 回复
+- **进行中**：Task 7 Step 4（T5.4）：第 1 轮已核对（/tmp/p5-r1-post.txt），没有挡路的问题；第 2 轮按用户决定跳过；T5.4 完成。下一步 Task 8（T5.5）从 Step 1 开始
+- **下一步**：Task 8（T5.5）：汇总彩排发现，逐项决定（含 order_date 服务端修复、类目维度名、GW_EXCEPTION_LEVEL、query_timeout、每步耗时表）；改 Gateway 时有 GATE
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」
@@ -842,3 +842,19 @@
 - 测试：`quick/test` 67 → 80（回答语言 1 条；中英一致性：问题顺序和配对、4 张参照表、正文数字按步骤比对、skills 和权限表、回复模板、runbook 各部分和命令、标题层级、互相指向、固定英文句子、指令长度；Hygiene 覆盖英文文件）。变异：新组 44/44，ai 7/7，docs 15/15，adx 14/14。doris/test 168、scripts/test 137 不变。
 - 评审（Opus）：1 轮修复（英文文件的交叉引用改指向 .en.md；数据值规则补全活动名、地区、物流公司；数字检查更严；措辞）后通过；4 个测试灵敏度的 Minor 留给 Task 8。
 - 用户要做：在 Quick 里重新粘贴两个 agent 的指令。
+
+### 2026-09-30 P5 Task 7 Step 4（T5.4）：彩排第 1 轮（英文）
+
+- 用户自己用英文问题完成（没有先说「开始第 1 轮」，没有填模板 2）：「我用英语测试完成，Part B 没有问题」。第 2 轮按用户决定跳过。
+- 窗口：2026-09-30T04:05:20Z（提交 9d6b96a 的时间；之后只有用户调用 Gateway）– 05:59:26Z；最后一次调用在 06:01:47Z。时区 Asia/Shanghai。没有发送时间，下面的分步是按审计时间聚类推断的。
+- 每步（审计时间、调用数、失败）：
+  0. 04:19–04:28：14 次 `execute_query`（MV、agg_daily_traffic 的探索，不属于 7 个问题）；2 次失败（异步 MV 不支持 SHOW CREATE TABLE、`LastRefreshTime` 列不存在），agent 自己改正。
+  1–2. 开场 + 第 2 幕：05:24–05:28 共 35 次（`check_service_health` 7 次、`list_metrics` 6 次，看起来重问过或新建过对话），05:31 再 6 次（按月 7 个指标、按渠道、同期同天数）。`query_metric` 的时间过滤全部写在 `metric_time` 上。
+  3. 第 3 幕：05:33–05:34 共 8 次；`query_metric(line_gmv, group_by=category__category_name)` 又一次 `VALIDATION_ERROR`（Part A 两次，这是第 3 次），agent 改用手写 SQL，活动期按自己的理解取（06-01 至 06-18 等），没有查 `dim_promotion`，数字会和参照值不同（指南：不算失败）。
+  4. 第 5 幕：05:43–05:45 共 16 次；按店铺查退款率，看评价和物流；1 次失败（`tag` 列不存在），agent 自己改正。没有用 TOKENIZE / MATCH_PHRASE 检索中文差评词（SQL 里 0 个中文字面量），直接取了评价内容。
+  5. 第 7 幕 + Track A：05:47–05:48 共 7 次；带 profile 执行 2 条 → `list_recent_queries` 按 trace 2 次 → `get_query_profile` 2 次都成功。
+  6. Track B：05:54–05:55 共 10 次（SHOW TABLE STATS、SHOW DATA SKEW、SHOW INDEX、variant_type）。
+  7. 收尾：05:59–06:01 共 8 次（SHOW CREATE TABLE agg_daily_traffic 等）。
+- `demo-check post`：5/5，exit=0。audit 100 条（96 ok、4 failed，全部被 agent 自己改正）；latency 104 次调用，单次最长 9655 ms（`query_metric`），没有 WARN；连接 18 个，都来自 `172.31.`。
+- 审计核对：没有写操作；`query_metric` 的 where 12 条里 0 条用 `order_date`；SQL 里没有英文的数据值（例如 'Double 11'）。
+- 挡路的问题：无。Task 8 要处理的：类目维度名（第 3 次猜错，并导致不查 `dim_promotion`）；英文第 5 幕没有展示倒排索引检索；runbook「每步耗时」只能用推断的分步。
