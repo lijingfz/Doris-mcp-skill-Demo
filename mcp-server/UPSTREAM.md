@@ -3,7 +3,8 @@
 - Repository: https://github.com/velodb/velodb-mcp-server
 - Commit: `f235832da69f30194574defa370fa793aa14a340` (tag `velodb-mcp-server-0.3.0`, 2026-08-31; its pyproject still says 0.2.6)
 - Vendored with `git archive f235832 src test LICENSE.txt NOTICE mcp-server.toml requirements.txt`,
-  committed unmodified first. Each patch below is a separate commit on top.
+  committed unmodified first. The patches below are committed on top, mostly one commit per patch (a few share a
+  commit; `git log --oneline -- mcp-server` lists them).
 - License: Apache License 2.0 (`LICENSE.txt`, `NOTICE`).
 
 ## AgentCore patches (specs/doris-mcp-quick/design.md §5.2)
@@ -14,7 +15,7 @@
 | P-02 | `src/config/loader.py` | `ClusterConfig.fe_http_port` |
 | P-03 | `src/store/store.py`, `src/store/bootstrap.py` | process-wide service credentials as a fallback for the store layer |
 | P-04 | `src/server.py` | `create_server(service_credentials=, workspace_dir=)`: no MCP auth, one service-account pool |
-| P-05 | `src/tools/profile.py` (new) | `list_recent_queries`, `get_query_profile` |
+| P-05 | `src/tools/profile.py` (new) | `list_recent_queries`, `get_query_profile`; P5 fix `78d653f` (Runtime version 4): `get_query_profile` accepts query_id halves of 1-16 hex digits (`_QUERY_ID_RE`), as Doris prints them unpadded |
 | P-06 | `config/mcp-server.toml` (new) | runtime limits (50 s SQL timeout, pool 5, 2000 rows) |
 | P-07 | `pyproject.toml` (new) | dependencies pinned to upstream `uv.lock` + boto3 (+ 5 transitive pins that keep the CodeZip equal to the tested `.venv`), for AgentCore CodeZip |
 | P-08 | `test/test_agentcore_*.py` (new) | tests for P-01..P-06, P-10 (`test_agentcore_audit_errors.py`) and P-11 (`test_agentcore_time_constraints.py`) |

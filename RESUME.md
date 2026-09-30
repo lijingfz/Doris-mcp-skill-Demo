@@ -84,7 +84,7 @@ cat infra/state.env                                                       # 已�
 | 情况 | 怎么办 |
 |---|---|
 | `/tmp` 下的临时文件不见了（机器重启过）| 不影响。每个阶段的完整代码都嵌在 `plans/*.md` 里；说「继续」，Claude 会先按计划的「从计划取文件」一节把工具和文件重新取出来 |
-| 演示当天 | 按 `quick/runbook.md` 执行：演示前 30 分钟内让 Claude 跑 `scripts/demo-check.sh pre`（约 1.5 分钟），结束后跑 `post`；清理 AWS 资源要在演示结束后单独确认（GATE）|
+| 演示当天 | 按 `quick/runbook.md` 执行：演示前 30 分钟内让 Claude 跑 `scripts/demo-check.sh pre`（约 1.5 分钟），结束后跑 `post`。AWS 资源按用户决定保留（2026-09-30）；以后要清理时由用户自己执行 `infra/99-cleanup.sh`（先 dry-run，见 `README.md` 第 9 节），Claude 做只读核对和记录 |
 | `git status` 显示有未提交的改动 | 直接说「继续」。Claude 会对照 progress.md 判断归属；判断不了会问你 |
 | GATE 执行到一半断线 | 说「继续」。`infra/*.sh` 可以重复执行，已经存在的资源会跳过；Claude 会先 dry-run，让你确认还剩哪些操作 |
 | 想修改需求或决策 | 直接告诉 Claude。它会先改 `requirements.md` / `design.md`（写明变更原因），再调整计划 |

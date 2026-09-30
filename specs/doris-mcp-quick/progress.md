@@ -897,3 +897,24 @@
   - `tasks.md` P5 表头的测试数；
   - design §0 的补丁数、§6.3 的对账用例数（11 → 12）、§8.3 的连接器名、§9 的 `doriscli tablet` 映射、§12 的 D1–D8（已有 D9）；
   - `mcp-server/UPSTREAM.md` 补丁表没列 query_id 修正。
+
+### 2026-09-30 spec 文档同步（用户同意），`main` 同步
+- 用户：「合并到 main 吧，保持同步」「改掉吧」。上一条列出的旧说法按代码改掉，都是文档，不改设计和代码行为；`mcp-server/UPSTREAM.md` 只改文字，不需要重新部署。
+- design v0.9.1：
+  - 状态行：Task 9 推迟、资源保留；
+  - §0：11 处补丁；
+  - §5.1：`quick/skills/` 5 个文件夹和 P5 脚本；
+  - §5.2 P-05：query_id 修正 `78d653f`；
+  - §6.3：对账 12 个用例，P2 / P3 的 11/11 是加入之前的结果；
+  - §7：`deploy --diff`，已用 `agentcore deploy --help` 确认 `--dry-run`、`--diff` 都存在；
+  - §8.3：`Doris-Desktop-MCP`；
+  - §9：`doriscli tablet` 的翻译和 adapter 一致；
+  - §12：D9；
+  - §13：按补丁分 commit，已用 `git log -- mcp-server` 核实 P-01/P-06、P-10/P-11 各共用一个 commit。
+- 其他文件：
+  - `tasks.md`：P5 表头补上执行后的测试数，T5.6 标「推迟」；
+  - `specs/doris-mcp-quick/README.md`、`CLAUDE.md`：D1–D9；
+  - `RESUME.md`「演示当天」一行：资源保留，清理由用户执行；
+  - `mcp-server/UPSTREAM.md`：P-05 行加 query_id 修正，「每个补丁一个 commit」改为「大多一个补丁一个 commit」。
+- P5 计划 Task 9 的「开发机的 3 条 `/32`」没有改：它和 design §6.4 一致，是同一个地址的 22 / 8030 / 9030 三条规则。
+- 提交后按用户同意把本地 `main` 快进到 `p5-skills`，不推送（D8）。

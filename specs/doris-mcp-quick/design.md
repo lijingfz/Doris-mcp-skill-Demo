@@ -1,6 +1,6 @@
 # Doris MCP on AgentCore × Amazon Quick 桌面版 —— 设计
 
-> 版本：**v0.9** · 2026-09-30 · 状态：P5 演示准备完成（`plans/P5-skills.md` Task 1–8，分支 `p5-skills`；Task 9 在演示结束后清理）；P4 已按 `plans/P4-quick.md` 实施完成（T4.1、T4.3–T4.6，分支 `p4-quick`），整体评审（opus）已完成；P3 已按 `plans/P3-deploy.md` 实施完成（T3.0–T3.5），整体评审（opus）已完成（0 Critical / 0 Important），已本地合并到 `main`；P2 已按 `plans/P2-doris.md` 实施完成（T2.1–T2.7），整体评审（opus）已完成、I1 已修复并重新发布，已本地合并到 `main`；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
+> 版本：**v0.9.1** · 2026-09-30 · 状态：P5 演示准备完成（`plans/P5-skills.md` Task 1–8，分支 `p5-skills`；Task 9（清理）按用户决定推迟，AWS 资源保留）；P4 已按 `plans/P4-quick.md` 实施完成（T4.1、T4.3–T4.6，分支 `p4-quick`），整体评审（opus）已完成；P3 已按 `plans/P3-deploy.md` 实施完成（T3.0–T3.5），整体评审（opus）已完成（0 Critical / 0 Important），已本地合并到 `main`；P2 已按 `plans/P2-doris.md` 实施完成（T2.1–T2.7），整体评审（opus）已完成、I1 已修复并重新发布，已本地合并到 `main`；P1 已完成并合并到 `main`；P0 技术验证已完成（结论见 v0.3 变更记录与 §4.4、§4.5、§13）；备份路径按 D9 改为 Service auth
 > 输入材料：`prepare/` 下 4 份文件 + upstream `velodb-mcp-server`（锁定 commit `f235832`）+ 旧仓库 `velodb-mcp-agentcore`（复用流程与脚本）
 > 标注约定：✅ 已实测（本次对真实 Doris / AWS 账号只读验证）· 📄 官方文档确认 · ❓ 待 P0 验证
 
@@ -9,6 +9,7 @@
 | 版本 | 变更 |
 |---|---|
 | v0.1 | 初版（`docs/改造方案.md`），用户 review |
+| v0.9.1 | 文档同步（2026-09-30，内容以代码为准，不改变设计）：用户决定保留 AWS 资源（以后还要用），Task 9 推迟；§0 补丁数改为 11 处（P-01–P-11）；§5.1 补 `quick/skills/` 的 5 个文件夹和 P5 的脚本；§5.2 P-05 补上 query_id 校验修正（`78d653f`，Runtime version 4）；§6.3 对账用例 11 → 12（P5 T5.2 加 `yoy_same_days_2026_09`）；§7 补 `deploy --diff`；§8.3 桌面版的连接器是 `Doris-Desktop-MCP`；§9 `doriscli tablet` 的翻译与 adapter skill 一致（`SHOW TABLETS` 被 Doris 拒绝）；§12 补 D9；§13 补丁按补丁分 commit。根目录新增项目说明 `README.md` |
 | v0.9 | P5 实施（Task 1–8，2026-09-30）：① skills 导入 Quick 桌面版（T5.3）：A5 用 `execute_query` 执行 `SHOW FULL PROCESSLIST`，再查 `information_schema.active_queries` 和 `check_service_health`，没有让用户运行命令，也没有 `KILL`；A4（M-1）T5.3 导入时用户没有报告要求登录，仍**未证实**（§13）。② 彩排（T5.4）：第 1 轮（英文，用户自行完成）7 步没有挡路的问题，第 2 轮按用户决定跳过；彩排发现的 3 处偏差（类目维度名、活动期、差评检索）写进指令后重问：第 4 步按新规则回答；第 3 步用对了类目维度，双 11 用了 `dim_promotion` 的活动期，618 仍按 6 月 1–18 日算（结论方向不变，手册「出问题时」写明了追问的话）；单次工具调用最长 9655 ms，≥ 45 s 的 0 次，没有 424（§13）。③ T5.5 的四项决策：Gateway 保留 DEBUG 到演示结束，description 已补上（GATE；之后重跑 `infra/30-gateway.sh` 要显式带 `GW_EXCEPTION_LEVEL`，默认值是 DEBUG）；2003 错误里的主机地址：不补丁，第 1 轮彩排没有出现 2003（4 个失败都是 SQL 错误或参数校验）；手册「出问题时」已写明；`query_timeout` 保持 50 s（§13、§14）。④ Runtime version 4（P-10、P-11、3 个传递依赖锁定、query_id 每段 1–16 位的校验修复，§5.2）|
 | v0.8 | P5 计划（`plans/P5-skills.md`）：代码在 spec 阶段完成 TDD，并在 `bcda0f3` 的干净 worktree 上回放；只读核实了 Gateway、Runtime、CDK diff 和 Doris（`demo_ro`）。① skills：锁定 apache/doris-skills `0476f3b`，`scripts/build_skills.py` 从 git 对象生成 4 个副本（每个 SKILL.md 正文第一行是 adapter 提示；2 个超过 1024 字符的 description 换成缩写版；修 1 处断链），`doris-debug` 整个文件夹一次导入，adapter 先导入；adapter 的翻译表覆盖 doriscli 命令、会话变量、SQL 和 FE / BE HTTP 调用（§8.3、§9）。② P4 遗留：P-10 审计记下失败原因和 `query_metric` 的过滤条件；P-11 修 metric_time 过滤（OR、严格比较、交集、括号），旧 server 经 Gateway、新 server 在本机编译后以 `demo_ro` 执行，结果对比写进计划 Task 6（§5.2）；按分组粒度对齐时间范围确认是 MetricFlow 的设计，指令改为「同期同天数」按天分组；脚本 M-7–M-10。③ CodeZip 漂移：`botocore` 1.43.104、`rich-rst` 2.2.0、`sse-starlette` 3.5.0，锁到 `.venv` 的 1.43.103、2.1.0、3.4.11（§5.2 P-07、§13）。④ `scripts/demo-check.sh`（演示前后的只读检查）、`infra/99-cleanup.sh`（按依赖顺序删除，删除前先做全部检查，§7）、`infra/30-gateway.sh` 的 `GW_EXCEPTION_LEVEL` 和 description（§7、§14）。⑤ Runtime 偶发 502 / 冷启动慢：预检只有一项失败时重跑一次（§13）|
 | v0.7 | P4 实测（2026-09-28）：① scope（P0 评审 M-1）：仍**未证实**（`doris-mcp` 的 Sync 没有要求登录；新建 `Doris-Desktop-MCP` 时出现了登录页，但没有读地址）（§4.5、§13）。② Quick 侧耗时（P0 评审 M-3）：每个问题的总耗时 「Doris 专家」网页版约 5 s / 15 s（用户记录）；桌面版（`Doris-Desktop-MCP`）问题 1 的工具调用约 12 s、问题 2 约 2–3 分钟（按工具调用时间估算，未计时）；单次工具调用最长 9863 ms，≥ 45 s 的 0 次；T5.5 不必为此调整 `query_timeout`（§4.4、§13）。③ `doris-mcp`、`doris-mcp-svc`（网页版 Sync）和 `Doris-Desktop-MCP`（在网页版新建、桌面版使用，User auth）各 12 个工具，权限按 D7（`doris-mcp`、`doris-mcp-svc` 的 `execute_query` 用平时的 Ask Each Time；`Doris-Desktop-MCP` 的 `execute_query` 原为 Always Allow（D7 的彩排 / 演示设置，所以第 2 幕的 SQL 没有弹窗），改为 Ask Each Time 后桌面版会弹出允许 / 拒绝）；「Doris 专家」（User auth，桌面版，`Doris-Desktop-MCP`）的「开场 + 第 2 幕」数字与参照值一致（第 2 幕主动把 9 月按相同天数比较）；「Doris 专家（svc）」只在网页版验证了工具调用（client B），答案没有对账。④ 桌面版上 T0.7 建的 `doris-mcp` 刷新不了工具列表（仍是 `doris___net_check`；调用时 Quick 自己返回 HTTP 400，请求没有到 Gateway），所以桌面版改用新建的连接器 |
@@ -26,7 +27,7 @@
 
 ## 0. 一页结论
 
-1. **代码基线**：upstream `velodb-mcp-server` @ `f235832` 原样 vendoring 到 `mcp-server/`，叠加 **8 处补丁**（§5.2），其中 4 处是新文件。旧 `doris-mcp-agentcore` 的代码不再沿用，只复用它的**部署流程、agentcore.json 结构、VPC endpoint 排障经验和脚本**。
+1. **代码基线**：upstream `velodb-mcp-server` @ `f235832` 原样 vendoring 到 `mcp-server/`，叠加 **11 处补丁**（P-01–P-11，§5.2；P-09 在 P3、P-10 / P-11 在 P5 加入，P5 另有 P-05 的 query_id 校验修正），其中 P-02 / P-03 / P-04 / P-09 / P-10 / P-11 改 upstream 文件，其余是新文件。旧 `doris-mcp-agentcore` 的代码不再沿用，只复用它的**部署流程、agentcore.json 结构、VPC endpoint 排障经验和脚本**。
 2. **托管**：`@aws/agentcore` CLI v0.30，**CodeZip + Python 3.12 + VPC 模式**，Runtime 鉴权 **AWS_IAM**，Doris 走私网 `172.31.25.143:9030/8030`。
 3. **鉴权**：**单 Cognito 池（Quick → Gateway）+ Gateway → Runtime 用 IAM SigV4**。
 4. **Quick 桌面版集成**：
@@ -219,8 +220,8 @@ Doris-mcp-skill-Demo/
 ├── dorismcp/                        # agentcore CLI 项目（agentcore/agentcore.json, aws-targets.json, cdk/）
 ├── infra/                           # lib.sh + 幂等脚本（默认 dry-run）+ state.env + policies/
 ├── doris/                           # P2：01_mcp_user.sql（只有占位符）、semantic/ecom/*.yaml、publish/admin wrapper、reconcile.py、permission_matrix.py、test/
-├── quick/                           # 桌面版：agent 指令、local-connector.json、skills/doris-mcp-adapter/（P4/P5）
-├── scripts/                         # mcp_smoke.py、get-gw-token.sh、render-agentcore.py、check-secrets.sh
+├── quick/                           # 桌面版：agent 指令、local-connector.json（P4）；skills/ 的 5 个文件夹 = 自写的 doris-mcp-adapter + build_skills.py 生成的 4 个 upstream 副本、用户指南、演示手册（P5）
+├── scripts/                         # mcp_smoke.py、get-gw-token.sh、render-agentcore.py、check-secrets.sh；P5 加 build_skills.py、demo-check.sh、audit_check.py --failures、gw_latency.py
 ├── .venv/                           # 本地 venv（放在 codeLocation 之外，避免被打进 CodeZip / 符号链接 ELOOP）
 ├── .env.example                     # 只有变量名，没有值
 └── .gitignore
@@ -235,7 +236,7 @@ Doris-mcp-skill-Demo/
 | P-02 | `src/config/loader.py` | `ClusterConfig.fe_http_port = int(server.get("fe_http_port", 8030))` | profile 工具要用 |
 | P-03 | `src/store/store.py` + `src/store/bootstrap.py` | 新增进程级 `_service_creds`、`set_service_credentials()` / `clear_service_credentials()` / `get_effective_credentials()`（请求凭证优先，其次服务凭证）；`_get_conn()` 和 `pre_validate_physical()` 改为调用 `get_effective_credentials()` | 没设服务凭证时行为与 upstream 完全一致（upstream 单测不变）|
 | P-04 | `src/server.py` | `create_server(..., service_credentials=None, workspace_dir=None)`：设置了服务凭证时，`auth=None`，`_get_per_user_pool()` 返回服务账号连接池，并调用 `set_service_credentials`；workspace 目录优先用参数，其次 `DORIS_MCP_WORKSPACE_DIR`，最后才是原默认值 | 入站鉴权交给 Runtime IAM / Gateway JWT（D1）|
-| P-05 | `src/tools/profile.py`（新） | 2 个 profile 工具 + `summarize_profile` + `register_profile_tools(mcp, target, scope)`（§5.3） | 替换 `prepare/profile.py` |
+| P-05 | `src/tools/profile.py`（新） | 2 个 profile 工具 + `summarize_profile` + `register_profile_tools(mcp, target, scope)`（§5.3）。P5 修正（`78d653f`，Runtime version 4）：`get_query_profile` 的 query_id 校验改为每段 1–16 位十六进制（`_QUERY_ID_RE`），因为 Doris 打印的 query_id 不补零 | 替换 `prepare/profile.py` |
 | P-06 | `config/mcp-server.toml`（新） | `query_timeout_seconds = 50`、`pool_max_size = 5`、`query_max_rows = 2000`、`fe_http_port = 8030` | Quick 固定 60 s 超时；限制行数，避免撑爆上下文 |
 | P-07 | `pyproject.toml`（新） | 按 upstream `uv.lock` 锁定的直接依赖 + `mcp==1.28.1`、`starlette==1.3.1`、`boto3==1.43.103` | CodeZip 必须有 pyproject。CLI 用 `uv pip install --target … --python-platform aarch64-manylinux2014 --only-binary :all:` 安装，失败时依次回退 `_2_28`、`_2_34`；`rapidfuzz==3.14.5` 会触发回退到 `_2_28`（正常），安装后约 107 MB（上限 250 MB）。upstream 根目录的 `requirements.txt` 也要一起 vendoring（`test_deps.py` 读它）。P3 T3.2：pyproject 只锁直接依赖，CodeZip 解析到的 `caio` 0.12.9、`platformdirs` 4.12.0 比 `.venv` 新，所以再锁 `caio==0.12.5`、`platformdirs==4.11.15`，并用检查脚本对比 CodeZip 与 `.venv` 的 88 个 dist。P5：`botocore` 1.43.104（`boto3` 的依赖）、`rich-rst` 2.2.0（`cyclopts` 的）、`sse-starlette` 3.5.0（`mcp` 的）发布后，CodeZip 解析到新版（`.venv` 是 1.43.103、2.1.0、3.4.11），再锁这 3 个（共 5 个传递依赖），部署前后都用检查脚本确认 0 个不同 |
 | P-08 | `test/test_agentcore_*.py`（新） | settings、store 兜底、service 模式、profile（`httpx.MockTransport`）、12 个工具 + Draft 7、HTTP app `/ping` + initialize | upstream 的离线测试保持全部通过 |
@@ -350,7 +351,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
   - upstream 的 query_metric 会把指标列的 NULL 改写成 0（tools/semantic.py）：2025 年及更早期间没有去年同期数据，gmv_last_year / gmv_yoy 返回 0 表示「无数据」而不是「持平」。两个指标的 description 都写明了这一点（P2 整体评审 I1）。
   - `<` / `>` 会被编译成闭区间，时间范围用 `BETWEEN`；`metric_time` 放在 `OR` 里会生成错误的 SQL；join 来的维度写全路径（裸名按第一条路径解析）。
   - YAML 里字面量 `$` 写成 `$$`；必须恰好有一个 project 文档。
-- 对账（`doris/reconcile.py`）：11 个故事线用例（YTD 汇总、2026 月度、同比、渠道、大区、小程序季度占比、一级类目、品牌层级、故事 5.1 退款率、店铺类型评价、退款原因），金额到分（误差 ≤ 0.005）、比率误差 ≤ 1e-6，与对照 SQL 一致。`direct` 模式在本机编译 YAML（T2.4，`demo_ro`），`mcp` 模式经进程内 MCP server 调用 `list_metrics` / `query_metric`（T2.6，`mcp_svc`）。
+- 对账（`doris/reconcile.py`）：12 个故事线用例（YTD 汇总、2026 月度、同比、9 月同天数同比（P5 T5.2 加入，`yoy_same_days_2026_09`）、渠道、大区、小程序季度占比、一级类目、品牌层级、故事 5.1 退款率、店铺类型评价、退款原因；P2 / P3 的 11/11 是加入之前的结果），金额到分（误差 ≤ 0.005）、比率误差 ≤ 1e-6，与对照 SQL 一致。`direct` 模式在本机编译 YAML（T2.4，`demo_ro`），`mcp` 模式经进程内 MCP server 调用 `list_metrics` / `query_metric`（T2.6，`mcp_svc`）。
 
 ### 6.4 安全组（P0 的 `infra/10-network.sh` 创建）
 - `doris-mcp-rt`（挂到 Runtime ENI）：**无入站**。删除默认的全放行出站，只放行：TCP 9030/8030 → `doris-demo-sg`；TCP 443 → `doris-mcp-vpce`；TCP 443 → S3 prefix list `pl-63a5400a`（共 4 条）。
@@ -381,7 +382,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
   - `dorismcp/AGENTS.md`、`dorismcp/README.md`；
   - `dorismcp/agentcore/` 下的 `agentcore.json`、`aws-targets.json`、`.gitignore`、`.llm-context/`、`.env.local`（空文件，已忽略）、`cdk/`。
   - `cdk/node_modules` 在 create 时就装好了（约 307 MB，已忽略）。
-- 所有命令都在**项目根目录 `dorismcp/`** 下执行，不需要进 `dorismcp/agentcore/`：`agentcore validate`、`deploy --dry-run -v`、`deploy -y -v`、`status --json`。
+- 所有命令都在**项目根目录 `dorismcp/`** 下执行，不需要进 `dorismcp/agentcore/`：`agentcore validate`、`deploy --dry-run -v`（预览）、`deploy --diff -v`（CDK 差异；P3 起每次部署前用它确认只有预期的资源变化）、`deploy -y -v`、`status --json`。
 - 生成的资源与路径：
   - CloudFormation 栈 `AgentCore-dorismcp-default`。Runtime 实际名称是 `<project>_<runtime>` = `dorismcp_dorismcp`。首次部署耗时 5 分 41 秒。
   - CodeZip staging 目录是 `dorismcp/agentcore/.cache/<runtime>/staging`（spike 版 63 MB，已忽略）。
@@ -432,7 +433,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 
 ### 8.3 「Doris 专家」Agent
 - 在桌面版创建两个自定义 Agent，指令相同（`quick/agent-instructions.md`），各自只关联一个连接器：
-  - 「Doris 专家」关联 `doris-mcp`（User auth，主路径）；
+  - 「Doris 专家」关联 `doris-mcp`（User auth，主路径；桌面版从 P4 起改用在网页版新建的 `Doris-Desktop-MCP`，见 v0.7 ④）；
   - 「Doris 专家（svc）」关联 `doris-mcp-svc`（Service auth，备份路径）。
   - 两个连接器暴露的工具名都是 `doris___*`，一个 agent 同时关联两个连接器会出现重名工具。
   - P5（T5.3）：「Doris 专家」（桌面版关联 `Doris-Desktop-MCP`）挂上 §9 的 5 个 skill；指令第 5 条要求诊断类问题先加载 `doris-mcp-adapter`（Quick 不一定会自动选中它，T5.3 A5 实测）。
@@ -465,7 +466,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 | `doriscli profile list --active` | `execute_query("SHOW PROCESSLIST")`（正在运行的查询；`list_recent_queries` 只列已结束的）|
 | `doriscli profile diff a b` | 调用两次 `get_query_profile`，由 agent 对比 |
 | `doriscli profile history "<pat>"` | `list_recent_queries(sql_contains=pat)`（只覆盖已采集 profile 的查询；audit_log 当前未启用）|
-| `doriscli tablet db.t` | `execute_query("SHOW DATA SKEW FROM db.t")` + `SHOW TABLETS FROM db.t` + `SHOW COLUMN STATS db.t` |
+| `doriscli tablet db.t` | `execute_query("SHOW CREATE TABLE db.t")` + `SHOW PARTITIONS FROM db.t` + `SHOW DATA SKEW FROM db.t` + `SHOW TABLE STATS db.t` / `SHOW COLUMN STATS db.t`（与 adapter skill 一致；`SHOW TABLETS`、`SHOW PROC …` 被 Doris 拒绝，单个 tablet 的副本状态和版本数采集不到）|
 | `doriscli auth status` | `check_service_health()` |
 | 写操作（CREATE / ALTER / INSERT） | **不执行**，输出 DDL 由人工执行（Track B 的 HITL）|
 
@@ -504,7 +505,7 @@ GRANT SELECT_PRIV, CREATE_PRIV ON internal.system_mcp.* TO 'mcp_svc'@'%';  -- CR
 
 ## 12. 决策
 
-D1–D8 已于 2026-09-26 确定，完整结论见 `requirements.md` 文末。后续如有新的决策，也追加在那里，并在本文变更记录中注明。
+D1–D8 已于 2026-09-26 确定；D9（备份路径改为 Service auth，不做 Local stdio）在 P0 之后同日确定。完整结论见 `requirements.md` 文末。后续如有新的决策，也追加在那里，并在本文变更记录中注明。
 
 ---
 
@@ -533,7 +534,7 @@ D1–D8 已于 2026-09-26 确定，完整结论见 `requirements.md` 文末。�
 | Runtime 偶发 502 / 冷启动慢（P5 发现）| spec 阶段连续 3 次 `demo-check pre`，有 2 次各有 1 项失败（Runtime 返回 502，或冷启动慢到 Gateway 报错），重跑就通过 | 平台侧的偶发问题，不改代码。演示前预检只有一项失败时重跑一次，同一项连续两次失败才排查（`quick/runbook.md`）；彩排中出现时记下时间，T5.5 对照审计日志。T5.4 实测：P5 的 6 次 `demo-check pre` 和彩排第 1 轮里 502 出现 0 次；有 1 次预检遇到平台抖动（一次 `list_recent_queries` 用了 30842 ms），`mcp_smoke flow` 的轮询预算因此从 15 s 改为 45 s |
 | 用 OR 连接几个 metric_time 范围（P5 发现）| 旧 server 把条件删成 `() OR ()`，Doris 报语法错误，agent 会换写法反复重试 | P-11 改成明确的编译错误，并提示改法（每个范围调用一次，或用去年同期指标）；指令写明一次调用只写一个时间范围 |
 | adapter skill 没被自动选中 | agent 照 doriscli 的写法让用户去运行命令 | 指令第 5 条要求诊断类问题先加载 `doris-mcp-adapter`；每个副本的 SKILL.md 第一行也指向它；T5.3 A5 实测：用 `execute_query` 执行 `SHOW FULL PROCESSLIST`，再查 `information_schema.active_queries` 和 `check_service_health`，没有让用户运行命令，也没有 `KILL` |
-| upstream 版本漂移 | 补丁冲突 | vendoring 并锁定 commit；每处补丁单独提交，升级时 rebase |
+| upstream 版本漂移 | 补丁冲突 | vendoring 并锁定 commit；按补丁分 commit（个别补丁合在同一个 commit 里），升级时 rebase |
 | Doris 单节点 | 演示过程中 FE/BE 挂掉 | 演示前跑 `scripts/demo-check.sh pre`；Doris 运维手册 §8 已有处理步骤 |
 | 会话中断 | 进度丢失 | spec + progress + state.env + 每个任务一个 commit（R-60）；在 tmux 中运行 |
 
