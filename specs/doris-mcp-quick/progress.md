@@ -5,7 +5,7 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：修 get_query_profile 的 query_id 校验（Doris 的 id 每段不补零，1–16 位），TDD 后按 Task 6 Step 3–6 部署 Runtime version 4（GATE），然后重跑 pre、交 Part A
+- **进行中**：Task 7 Step 3（T5.3）已完成；Step 4（彩排第 1 轮）等用户说「开始第 1 轮」（先确认时区）
 - **下一步**：部署 version 4 后 pre 10/10；T5.3 Part A 交给用户
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
@@ -824,3 +824,13 @@
 
 - 用户确认「确认部署」后执行 `agentcore deploy -y`：exit=0，9 个步骤都是 `Status: SUCCESS`，`COMPLETED SUCCESSFULLY`，`Total Duration: 1m 2s`；`25-runtime-state.sh`：`status=READY version=4`；CodeZip 88 个 dist 与 `.venv` 0 个不同；`deployed-state.json` 不变，工作区干净。
 - `demo-check pre`：10/10，exit=0。`flow` 6/6（`source=v2`，`returned_chars=9163`）；对账 12/12；权限矩阵 5/5；连接 5 个。
+
+### 2026-09-30 P5 Task 7 Step 3（T5.3）：skills 导入 Quick 桌面版
+
+- 时区：模板 1 没有填（彩排第 1 轮开始前向用户确认）。窗口：2026-09-29T12:03:07Z – 2026-09-30T02:11:51Z。
+- 用户的回复（代替模板 1）：「逐一进行了skill的安装以及按照剧本的数据测试，没问题，测试是正常和符合预期的，时间虽然稍长一些，但是符合预期」。A1–A4 没有逐项填写，按用户的总结记为通过。
+- A5：审计里 2026-09-29T23:56:33Z `execute_query` 执行 `SHOW FULL PROCESSLIST`，随后查 `information_schema.active_queries` 和 `check_service_health`；没有 `KILL`，用户说符合预期。
+- 用户还按剧本问了业务问题（月度 GMV / 同比、渠道、618 品类、退款率、评价、UV 慢查询和 profile）：`query_metric` 的时间过滤全部写在 `metric_time` 上；审计里 3 处 `order_date` 都是手写 SQL（`execute_query`）里的列；`gmv_last_year` / `gmv_yoy` 那几次调用都成功。profile 流程 `list_recent_queries` → `get_query_profile` 3 次都成功（version 4）。
+- `demo-check post`：5/5，exit=0。audit 73 条（71 ok、2 failed），latency 73 次调用，单次最长 8980 ms（`execute_query`），每分钟都低于 60000 ms；连接 27 个，都来自 `172.31.`，没有空闲超过 610 s 的。
+- 2 个失败都是 `query_metric(line_gmv, group_by=category__category_name)` 的 `VALIDATION_ERROR`（618 品类问题问了两次，两次都是这样）。发布的维度名是 `category__cat1_name` / `cat2_name` / `cat3_name`；agent 之后 `describe_table`，改用手写 SQL 回答。
+- 修改：无。Task 8 要决定的：agent 猜品类维度名（是否在指令或 adapter 里写明）；`mcp_smoke flow` 15 s 的轮询预算（一次 30 s 的平台抖动就会失败）；query_id 修复评审的 3 个 Minor。
