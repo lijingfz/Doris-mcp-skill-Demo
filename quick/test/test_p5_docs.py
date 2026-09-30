@@ -275,6 +275,20 @@ class Questions(unittest.TestCase):
                     else:
                         self.assertIn(f"`{english}`", part)
 
+    def test_step_3_expects_the_promotion_periods_of_the_instructions(self):
+        # The two periods are written in quick/agent-instructions.md (they are the dim_promotion dates), so the
+        # agent need not query dim_promotion first; one query to check them is fine.
+        for path, heading, key, terms in (
+                (GUIDE, "步骤 3", "- 期望：", ("按指令里写的两个活动期过滤", "`ecom.dim_promotion` 里的起止日期",
+                                            "先查一次 `ecom.dim_promotion` 核对也可以")),
+                (GUIDE_EN, "Step 3", "- Expected:", ("the two promotion periods written in the instructions",
+                                                     "the start and end dates in `ecom.dim_promotion`",
+                                                     "query `ecom.dim_promotion` once to check them"))):
+            with self.subTest(doc=path.name):
+                line = _one_line(_part(path, PART_B[path], heading), key)
+                for term in terms:
+                    self.assertIn(term, line)
+
 
 class Setup(unittest.TestCase):
     def test_the_skills_to_import_are_the_folders_under_quick_skills(self):
@@ -327,11 +341,12 @@ class Setup(unittest.TestCase):
 
     def test_the_guides_and_the_handoff_list_the_rules_added_after_rehearsal_1(self):
         # T5.4 round 1 added three rules to quick/agent-instructions.md; the user checks the pasted text by the list.
-        chinese = ("类目维度名", "活动日期查 dim_promotion", "差评原因用倒排索引检索")
+        # The promotion rule gives the two periods of the demo, the dim_promotion dates.
+        chinese = ("类目维度名", "618、双 11 的活动期（dim_promotion 的起止日期）", "差评原因用倒排索引检索")
         for path, text, key, items in (
                 (GUIDE, _part(GUIDE, PART_A[GUIDE], "A2 "), "新版比 P4 多了几条", chinese),
                 (GUIDE_EN, _part(GUIDE_EN, PART_A[GUIDE_EN], "A2 "), "Compared with P4, the new version adds",
-                 ("the category dimension names", "promotion dates from dim_promotion",
+                 ("the category dimension names", "the 618 and Double 11 periods (the dim_promotion dates)",
                   "review causes through the inverted index")),
                 (HANDOFF, _section(HANDOFF, "当前状态"), "`quick/agent-instructions.md` 更新了", chinese)):
             with self.subTest(doc=path.name):

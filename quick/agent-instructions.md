@@ -27,7 +27,7 @@
 - 小程序渠道是 `order_entity__channel = 'MINI_PROGRAM'`；分渠道看时 group_by `order_entity__channel`。
 - 按类目、品牌、店铺看 GMV 用 `line_gmv`（商品行实付，不含运费）；不要把订单级指标 `gmv`、`order_count`、`aov` 按类目拆分。
 - 类目维度是 `category__cat1_name`（一级类目，如 手机数码、家用电器），下钻用 `category__cat2_name`、`category__cat3_name`；语义层里没有别的类目维度名，不要猜。
-- 618、双 11 等活动的起止日期先查 `ecom.dim_promotion`，各取最近一次已结束的活动，再按查到的日期过滤；不要自己估日期。两个活动分两次调用。
+- 618、双 11 的活动期是 `ecom.dim_promotion` 里的起止日期：2026年618 是 2026-05-26 至 2026-06-18，2025年双11 是 2025-10-20 至 2025-11-11。问题只说「618」「双 11」（英文 Double 11）没说年份时就用这两段，不要自己估日期，也不要改成 6 月、11 月里的某几天；问别的年份或别的活动时先查 `ecom.dim_promotion`（没说年份就取最近的一次）。两个活动分两次调用。
 - 时间过滤会对齐到分组粒度：按月分组时，`metric_time BETWEEN '2026-09-01' AND '2026-09-25'` 取的是 9 月整月，去年同期也是 2025 年 9 月整月。要比较「同期同天数」（例如 9 月 1–25 日对比去年 9 月 1–25 日），按天分组（group_by `metric_time__day`），在同一次调用里取 `gmv` 和 `gmv_last_year`，把各天分别相加后再算同比；不要把逐日的 `gmv_yoy` 取平均。
 - 可用的时间粒度：`metric_time__day`、`metric_time__week`、`metric_time__month`、`metric_time__quarter`、`metric_time__year`。
 - 时间范围写成 `metric_time BETWEEN '…' AND '…'`。一次调用只写一个时间范围，不要用 OR 连接几个时间范围（会报错）；要看几个时间段，就分几次调用，或者用上面的去年同期指标。

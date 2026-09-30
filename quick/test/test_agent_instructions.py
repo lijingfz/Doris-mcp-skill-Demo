@@ -158,11 +158,29 @@ class Rules(unittest.TestCase):
 
     def test_promotion_periods_come_from_dim_promotion(self):
         # Rehearsal round 1: the agent used its own dates for 618 (06-01..06-18), so its numbers differed from
-        # the reference values of quick/P5-guide.md step 3. dim_promotion holds 618 and 双 11 of several years;
-        # on the demo day the most recent finished ones are 2026年618 and 2025年双11, the reference periods.
+        # the reference values of quick/P5-guide.md step 3. Told to look them up first, it still did not query
+        # dim_promotion, so the two periods of the demo (its dim_promotion dates) are written in. They hold for the
+        # English question too; the lookup is only for other years and other promotions.
         bullet = self._bullet("`ecom.dim_promotion`")
-        for term in ("618", "双 11", "起止日期先查", "各取最近一次已结束的活动", "按查到的日期过滤", "不要自己估日期"):
+        for term in ("`ecom.dim_promotion` 里的起止日期", "2026-05-26", "2026-06-18", "2025-10-20", "2025-11-11",
+                     "没说年份时就用这两段", "Double 11", "不要自己估日期", "也不要改成 6 月、11 月里的某几天",
+                     "问别的年份或别的活动时先查 `ecom.dim_promotion`（没说年份就取最近的一次）", "两个活动分两次调用"):
             self.assertIn(term, bullet)
+
+    def test_the_promotion_periods_are_the_ones_of_the_guide_step_3(self):
+        # The reference values of quick/P5-guide.md step 3 are computed on the periods its expectation line states;
+        # a date there without a year is in the promotion's year.
+        guide = (ROOT / "quick" / "P5-guide.md").read_text(encoding="utf-8")
+        step_3 = re.search(r"^### 步骤 3（.*?(?=^##)", guide, re.M | re.S)
+        self.assertIsNotNone(step_3, "P5-guide.md: no '### 步骤 3（…'")
+        periods = re.findall(r"(\d{4})年(618|双11)：((?:\d{4}-)?\d\d-\d\d) 至 ((?:\d{4}-)?\d\d-\d\d)",
+                             step_3.group(0))
+        self.assertEqual([(year, name) for year, name, _, _ in periods], [("2026", "618"), ("2025", "双11")])
+        bullet = self._bullet("`ecom.dim_promotion`")
+        for year, name, *dates in periods:
+            start, end = (date if len(date) == 10 else f"{year}-{date}" for date in dates)
+            with self.subTest(promotion=f"{year}年{name}"):
+                self.assertIn(f"{year}年{name} 是 {start} 至 {end}", bullet)
 
     def test_review_causes_use_the_inverted_index(self):
         # Rehearsal round 1: the agent read the bad reviews row by row instead of using the inverted index on
