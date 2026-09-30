@@ -76,6 +76,9 @@ FIXED_STRINGS = (  # the other strings the presenter copies: the English verbati
     ("There is no command line here. Use only the Doris MCP tools, following the doris-mcp-adapter mapping table",
      "这里没有命令行，只能用 Doris MCP 工具，按 doris-mcp-adapter 的对照表来",
      {RUNBOOK: (TROUBLE[RUNBOOK],), RUNBOOK_EN: (TROUBLE[RUNBOOK_EN],)}),
+    ("Recompute with the start and end dates of 2026年618 and 2025年双11 in ecom.dim_promotion",
+     "按 ecom.dim_promotion 里 2026年618 和 2025年双11 的起止日期重算",
+     {RUNBOOK: (TROUBLE[RUNBOOK],), RUNBOOK_EN: (TROUBLE[RUNBOOK_EN],)}),
 )
 DEMO_FLOW_HEADER_EN = "| Step | Part | Question | Chinese original | What to show / say | Expected |"
 REFERENCE_TABLES = (  # the start of the header line in the Chinese guide and in the English one
@@ -394,6 +397,15 @@ class Runbook(unittest.TestCase):
                 line = _one_line(_section(path, AFTER[path]), "CDKToolkit")
                 for term in terms:
                     self.assertIn(term, line)
+
+    def test_the_step_3_shares_bullet_gives_the_same_shares_in_both_versions(self):
+        # Rehearsal: the agent still computed 618 on its own dates. 31.45% (618) and 27.94% (双 11) are the top
+        # shares on its own ranges (06-01..06-18, 11-01..11-11), checked on the data; the presenter compares them
+        # with the answer. The value test of the demo flow does not cover 出问题时 / If something goes wrong.
+        shares = {path: re.findall(r"\d+(?:\.\d+)?%", _one_line(_section(path, TROUBLE[path]), key))
+                  for path, key in ((RUNBOOK, "第 3 步的占比和参照值对不上"), (RUNBOOK_EN, "shares of step 3"))}
+        self.assertEqual(shares[RUNBOOK], ["31.45%", "27.94%"])
+        self.assertEqual(shares[RUNBOOK_EN], shares[RUNBOOK])
 
     def test_the_time_table_is_filled_in_with_the_same_numbers_in_both_versions(self):
         # T5.5 fills it from rehearsal 1; round 2 was skipped (its cell reads 跳过 / skipped)
