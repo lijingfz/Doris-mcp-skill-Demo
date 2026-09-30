@@ -11141,10 +11141,10 @@ for tid in sys.argv[1:]:
     s = s.replace(old, f"| [x] | {tid} |")
 p.write_text(s, encoding="utf-8"); print("ticked:", *sys.argv[1:])
 EOF
-echo '**P5 已完成**（`plans/P5-skills.md` Task 1–9，分支 `p5-skills`）：skills 导入、彩排 2 轮、演示，演示后按 T5.6 清理了 AWS 资源（secret 7 天内可恢复）。P0–P5 的过程见日志；要再演示，从 P1 的 `infra/*.sh` 重建' | .venv/bin/python /tmp/p5-progress.py state 阶段
+echo '**P5 已完成**（`plans/P5-skills.md` Task 1–9，分支 `p5-skills`）：skills 导入、彩排 1 轮（第 2 轮按用户决定跳过）、演示，演示后按 T5.6 清理了 AWS 资源（secret 7 天内可恢复）。P0–P5 的过程见日志；要再演示，从 P1 的 `infra/*.sh` 重建' | .venv/bin/python /tmp/p5-progress.py state 阶段
 echo '无（P5 已完成）' | .venv/bin/python /tmp/p5-progress.py state 进行中
-echo '由用户决定：`p5-skills` 是否合并到 `main`、是否推送（D8）；Quick 里的连接器、agent、skill 是否删除（已不能使用）' | .venv/bin/python /tmp/p5-progress.py state 下一步
-echo '等待用户：`p5-skills` 是否合并到 `main`、是否推送（D8）' | .venv/bin/python /tmp/p5-progress.py state 阻塞
+echo '由用户决定：Task 9 的提交（`p5-cleanup` 或 `p5-skills`）是否合并到 `main`、是否推送（D8；Task 1–8 已在演示前快进合并到本地 `main`）；Quick 里的连接器、agent、skill 是否删除（已不能使用）' | .venv/bin/python /tmp/p5-progress.py state 下一步
+echo '等待用户：Task 9 的提交是否合并到 `main`、是否推送（D8）' | .venv/bin/python /tmp/p5-progress.py state 阻塞
 .venv/bin/python /tmp/p5-progress.py sub '已创建的 AWS 资源' 'SG `doris-mcp-rt`、`doris-mcp-vpce`；' "**T5.6（$(date -u +%F)）已删除下列资源**（\`infra/99-cleanup.sh\`，GATE；secret 7 天内可恢复；保留：\`state.env\` 的记录、日志组、X-Ray 设置、CDKToolkit）：SG \`doris-mcp-rt\`、\`doris-mcp-vpce\`；"
 .venv/bin/python /tmp/p5-progress.py sub 'Doris 变更' 'T2.5 以 root 新建库 `system_mcp`' "**T5.6（$(date -u +%F)）用户以 root 删除了 \`'mcp_svc'@'172.31.%'\` 和库 \`system_mcp\`**（回收站保留 1 天）。以下是删除前的记录：T2.5 以 root 新建库 \`system_mcp\`"
 sed "s/@DATE@/$(date -u +%F)/" <<'EOF' | .venv/bin/python /tmp/p5-progress.py log
@@ -11179,14 +11179,14 @@ git status --short; git log --oneline -1 | cut -c9-   # 期望：工作区干净
 - [ ] T5.1：`quick/skills/` 下的 4 个副本和 `LICENSE.txt`、`CLI-CONTRACT.md`、`UPSTREAM.md`（共 119 个文件）由 `scripts/build_skills.py` 从锁定的 `0476f3b` 生成，`--check` 没有不同，整棵树的 sha256 与本计划一致；14 个 `SKILL.md` 都带 adapter 提示，description 都 ≤ 1024 字符，没有未列明的断链（R-50）。
 - [ ] T5.2：`doris-mcp-adapter` 覆盖 `CLI-CONTRACT.md` 和副本里的每个 `doriscli` 用法，带 profile 执行的约定用 server 接受的 `max_chars`；指令加了第 5 条和时间过滤的写法；对账 12/12（R-50）。
 - [ ] T5.3：用户在桌面版导入了 5 个 skill（A1 表的名字和描述与仓库一致），两个 agent 已更新，权限按 D7；A5（adapter 能不能被自动选中）和 A4（登录页的 scope，P0 评审 M-1）的结论写进了 design v0.9（R-50、D7）。
-- [ ] T5.4：完整彩排 2 轮。Track A（慢查询 → profile → 解读）、Track B（DDL 评审 → 推荐 DDL，由人工执行）端到端完成，除执行 DDL 外没有人工干预；每轮前 `demo-check pre` 10/10、每轮后 `post` 5/5，答案对照了 `quick/P5-guide.md` 的参照值；每步耗时已填进 `quick/runbook.md`（R-51，design §11 P5 行）。
+- [ ] T5.4：完整彩排 1 轮（第 2 轮按用户决定跳过，见 progress 日志）。Track A（慢查询 → profile → 解读）、Track B（DDL 评审 → 推荐 DDL，由人工执行）端到端完成，除执行 DDL 外没有人工干预；每轮前 `demo-check pre` 10/10（第 1 轮前没有单独跑，用的是 Task 7 Step 3 version 4 部署后的那次）、每轮后 `post` 5/5，答案对照了 `quick/P5-guide.md` 的参照值；每步耗时已填进 `quick/runbook.md`（R-51，design §11 P5 行）。
 - [ ] 每轮彩排的审计记录数和 Gateway 的调用数已对照；失败的调用都有原因（P-10：`error`，`query_metric` 的 `where` / `having`），由 `demo-check post` 列出（R-32）。
 - [ ] T5.5：彩排发现的问题逐条修了（先红后绿）或写明了不修的理由；4 项决策（Gateway `exceptionLevel`、2003 错误里的主机地址、`query_timeout`、Gateway description）由用户选定，写进 design v0.9 的 §13、§14。
-- [ ] T5.7a：Runtime version 3（P-10、P-11、3 个传递依赖锁定），CodeZip 检查 0 个不同，部署前后的 7 个探针按预期（strict、intersect、mixed、or 变化，其余 3 个不变），部署后对账 12/12、权限矩阵 5/5。T5.7b：M-7–M-10 已关闭。
+- [ ] T5.7a：Runtime version 3（P-10、P-11、3 个传递依赖锁定），CodeZip 检查 0 个不同，部署前后的 7 个探针按预期（strict、intersect、mixed、or 变化，其余 3 个不变），部署后对账 12/12、权限矩阵 5/5；Task 7 的 query_id 修复（每段 1–16 位十六进制）部署为 version 4。T5.7b：M-7–M-10 已关闭。
 - [ ] T5.6：演示结束后 `infra/99-cleanup.sh` 删除了本项目的全部 AWS 资源，第二次 dry-run 全部是 already deleted；`doris-demo-sg` 只剩开发机的 `/32` 规则，没有 `0.0.0.0/0`（R-40）；别的项目的资源都还在；`state.env` 保留；Doris 侧和 Quick 侧的决定已记录。
 - [ ] 每个 GATE（Task 6 部署、Task 8 改 Gateway 或再部署（如果做了）、Task 9 清理）都先展示了命令和 dry-run / diff，progress 日志里有用户确认的原话（R-44）。
-- [ ] 测试全部通过：`doris/test` 168 个、`scripts/test` 137 个、`quick/test` 60 个、`test_agentcore_*.py` 141 个、upstream 离线测试、9 组 shell 测试；14 组突变（共 220 个）全部被抓到。
+- [ ] 测试全部通过：`doris/test` 168 个、`scripts/test` 138 个、`quick/test` 89 个、`test_agentcore_*.py` 154 个、upstream 离线测试、9 组 shell 测试；14 组突变（共 220 个）全部被抓到。
 - [ ] P5 的提交里没有密码、secret、token、Doris 主机地址、私网 IP 和开发机 IP：每次提交前 `check-secrets.sh` 都是 OK（清理之后跳过 2 个排期删除的 secret），暂存区新增行的 IP 计数都是 0，`$v` 为空时输出 FAIL（R-43、M-10）。
 - [ ] 每个任务都有对应的提交和 progress 日志条目，新会话按 `CLAUDE.md` 能接着做（R-60）；新的 `infra/99-cleanup.sh` 默认 dry-run，可以重跑（R-61）。
-- [ ] 整体评审（opus，Task 7 Step 2）已完成：Critical / Important 都已修复，每个修复都有先红后绿的测试；Minor 在 Task 8 Step 1 逐条处理。
+- [ ] 整体评审（opus，Task 7 Step 2）已完成：Critical / Important 都已修复，每个修复都有先红后绿的测试；Minor 在 Task 8 Step 1 逐条处理；Task 8 之后的最终整体评审（opus）0 Critical / 0 Important，3 个 Minor 已修。
 - [ ] 合并方式和是否推送到私有仓库 `lijingfz/Doris-mcp-skill-Demo` 由用户决定（D8），推送前再确认一次。

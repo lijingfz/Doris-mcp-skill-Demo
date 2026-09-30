@@ -1,7 +1,7 @@
 # Demo runbook: Doris MCP × Amazon Quick desktop
 
 > This file contains no URL, secret or token. The connection parameters are in `quick/T0.7-guide.md`; get secrets only in your own terminal, not with Claude Code's `!` prefix.
-> The questions and reference values come from design §10 and Part B of `quick/P5-guide.en.md`; "Time per step" comes from the two rehearsals (T5.4).
+> The questions and reference values come from design §10 and Part B of `quick/P5-guide.en.md`; "Time per step" comes from rehearsal round 1 (T5.4; round 2 was skipped by the user's decision).
 > Chinese version: `quick/runbook.md`
 
 ## Before the demo

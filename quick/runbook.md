@@ -1,7 +1,7 @@
 # 演示手册：Doris MCP × Amazon Quick 桌面版
 
 > 本文件不含任何 URL、secret 或 token。连接参数见 `quick/T0.7-guide.md`；secret 只在你自己的终端里获取，不要用 Claude Code 的 `!` 前缀。
-> 问题和参照值来自 design §10 和 `quick/P5-guide.md` Part B；「每步耗时」来自两轮彩排（T5.4）。
+> 问题和参照值来自 design §10 和 `quick/P5-guide.md` Part B；「每步耗时」来自第 1 轮彩排（T5.4；第 2 轮按用户决定跳过）。
 > English version: `quick/runbook.en.md`
 
 ## 演示前
