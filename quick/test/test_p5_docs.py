@@ -64,6 +64,7 @@ TEMPLATES = {GUIDE: "回复模板", GUIDE_EN: "Reply templates"}
 DEMO_FLOW = {RUNBOOK: "演示流程", RUNBOOK_EN: "Demo flow"}
 TROUBLE = {RUNBOOK: "出问题时", RUNBOOK_EN: "If something goes wrong"}
 AFTER = {RUNBOOK: "演示后", RUNBOOK_EN: "After the demo"}
+TIMES = {RUNBOOK: ("每步耗时", "| 步骤 |"), RUNBOOK_EN: ("Time per step", "| Step |")}  # section, table header
 ENGLISH = {GUIDE: GUIDE_EN, RUNBOOK: RUNBOOK_EN}
 FIXED_STRINGS = (  # the other strings the presenter copies: the English verbatim, its Chinese original, and where
     ("Are there any slow queries running on the cluster right now?", "现在集群上有没有正在运行的慢查询？",
@@ -378,6 +379,20 @@ class Runbook(unittest.TestCase):
                 line = _one_line(_section(path, AFTER[path]), "CDKToolkit")
                 for term in terms:
                     self.assertIn(term, line)
+
+    def test_the_time_table_is_filled_in_with_the_same_numbers_in_both_versions(self):
+        # T5.5 fills it from rehearsal 1; round 2 was skipped (its cell reads 跳过 / skipped)
+        zh, en = (_data_rows(_table(_section(path, TIMES[path][0]), TIMES[path][1]))
+                  for path in (RUNBOOK, RUNBOOK_EN))
+        self.assertEqual([row[0] for row in zh], [str(step) for step in range(1, 8)])
+        self.assertEqual(len(en), len(zh))
+        for row_zh, row_en in zip(zh, en):
+            with self.subTest(step=row_zh[0]):
+                self.assertNotIn("—", row_zh + row_en)
+                self.assertEqual((row_zh[3], row_en[3]), ("跳过", "skipped"))
+                numbers = [row_zh[0], row_zh[2], *row_zh[4:]]
+                self.assertTrue(all(re.fullmatch(r"\d+(?:\.\d)?", cell) for cell in numbers), row_zh)
+                self.assertEqual([row_en[0], row_en[2], *row_en[4:]], numbers)
 
 
 class English(unittest.TestCase):

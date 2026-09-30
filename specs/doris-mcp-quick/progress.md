@@ -5,8 +5,8 @@
 <!-- 每个任务结束时覆盖这一块；下面的日志只追加不修改 -->
 
 - **阶段**：**P5 进行中**（`plans/P5-skills.md`，分支 `p5-skills`，执行方式：Subagent-driven（每个任务一个 Opus 5.5 implementer + 一个 Opus 5.5 reviewer，Task 7 Step 2 再整体评审））。P4 已完成（T4.1、T4.3–T4.6），已合并到 `main` 并推送到私有仓库（`origin/main` = `0b41b98`）；P0–P4 的过程见日志
-- **进行中**：Task 8（T5.5）：Step 1 的修复已提交（指令新增类目维度名、活动日期查 dim_promotion、差评原因用倒排索引三条；两份 runbook 各补两行；flow 等待 45 s；demo-check.sh set +x；文档测试灵敏度）；Step 3 四项决策已定；Step 4 GATE 已执行（description 补上、DEBUG 保留，pre 10/10）。等用户在 Quick 重贴指令、在新对话里重问第 3、4 步
-- **下一步**：用户重问第 3、4 步后跑 demo-check post，核对 category__cat1_name、dim_promotion、TOKENIZE / MATCH_PHRASE / MATCH_ANY；然后 Step 2 填两份 runbook 的「每步耗时」，Step 5 写 design v0.9 并提交
+- **进行中**：Task 8（T5.5）：Step 1 修复、Step 2 耗时表（两份 runbook，第 1 轮按审计推算，第 2 轮跳过）已提交；Step 3 决策已定，Step 4 GATE 已执行。用户重问的第 4 步已按新规则（分词统计差评词）；第 3 步那次没有查 dim_promotion（可能在新指令保存成功之前问的），等用户在新对话里再问一次
+- **下一步**：用户重问第 3 步后跑 demo-check post，核对 dim_promotion、category__cat1_name；然后 Step 5 写 design v0.9、勾选 T5.5 并提交
 - **注意**：P5 的 GATE 有 3 个（Task 6 部署 Runtime；Task 8 改 Gateway，只在决定改时；Task 9 清理），每个单独确认。`mcp_svc` 只经 Runtime 使用，不试探特权或诊断类语句。Runtime 偶发 502 / 冷启动慢：`demo-check pre` 只有一项失败时重跑一次。VPC 里 4 个未挂载的 `launch-wizard-*` SG 由用户决定，P5 不碰。`check-secrets.sh` 要读 Secrets Manager，需要有效的 AWS 凭证
 - **spec 阶段的临时产物**：spec 阶段的 `/tmp/p5-stage-*`（worktree）、`/tmp/p5-work`、`/tmp/p5-research`、`/tmp/p5-plan`、探针脚本已在 Task 1 Step 1 删除。**权威版本是 `plans/P5-skills.md` 里嵌入的代码**，用 `/tmp/p5-extract.py` 按 sha256 取出（计划「从计划取文件」）；`/tmp` 丢失后先重跑那一节，要用 `build_skills.py` 时再按 Task 1 Step 4 clone upstream
 - **P3 / P4 路径决策**：P4 主路径 = Cloud Connector + **User auth**（client A），备份 = Cloud Connector + **Service auth**（client B），两条在 T0.7 都已跑通。**Local stdio 整个项目不做**（D9，用户 2026-09-26 决定；R-11 取消，原 T4.2 删除，T4.4 改为两个连接器各跑一次）。T3.1 加收紧 CDK 默认角色通配权限、T3.2 加 deploy 前确认 `disableTransactionSearch`、T3.4 加经 Gateway 逐次测耗时；T5.5 的「预热脚本」改为「演示前冒烟脚本」

@@ -89,14 +89,14 @@ Ask each question only when the previous answer is fully shown; copy the questio
 
 ## Time per step
 
-Measured in the two rehearsals (T5.4), in seconds; T5.5 fills this in from the rehearsal replies. "Tool calls" is the number of calls the Gateway recorded for the step.
+Measured in rehearsal (T5.4), in seconds. Round 1 (in English) did not note when each question was sent and answered, so "Round 1" is the time the step's tool calls took, worked out from the audit (from the first call sent to the last call returned); the thinking before the first call and writing the answer after the last one are not in it, so allow extra time for them at the demo. Round 2 was skipped, as the user decided. "Tool calls" is the number of calls the Gateway recorded for the step, and "Longest call" the slowest of them; step 7 had 1 more call 2 minutes later (probably a follow-up question), which is not counted.
 
 | Step | Part | Round 1 | Round 2 | Tool calls | Longest call |
 |---|---|---|---|---|---|
-| 1 | Opening | — | — | — | — |
-| 2 | Act 2 | — | — | — | — |
-| 3 | Act 3 | — | — | — | — |
-| 4 | Act 5 | — | — | — | — |
-| 5 | Act 7 + Track A | — | — | — | — |
-| 6 | Track B | — | — | — | — |
-| 7 | Closing | — | — | — | — |
+| 1 | Opening | 6 | skipped | 1 | 5.7 |
+| 2 | Act 2 | 37 | skipped | 6 | 7.5 |
+| 3 | Act 3 | 76 | skipped | 8 | 9.3 |
+| 4 | Act 5 | 115 | skipped | 16 | 8.9 |
+| 5 | Act 7 + Track A | 30 | skipped | 7 | 7.3 |
+| 6 | Track B | 67 | skipped | 11 | 7.3 |
+| 7 | Closing | 32 | skipped | 7 | 6.7 |
